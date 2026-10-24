@@ -1,0 +1,117 @@
+/* cloudwaer-blog-ui 设计令牌：暖纸白 + 墨色 + 靛蓝（编辑式中文技术博客） */
+:root {
+  --bg: #faf9f6;
+  --card: #ffffff;
+  --ink: #23262b;
+  --muted: #6b7280;
+  --accent: #4c6ef5;
+  --accent-soft: #eef2ff;
+  --border: #eae8e3;
+  --radius: 12px;
+  --font: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC',
+    'Segoe UI', sans-serif;
+  --body-size: 15px;
+  --container-max: 1080px;
+  --progress-h: 3px;
+}
+
+:root[data-font-size='sm'] {
+  --body-size: 14px;
+}
+
+:root[data-font-size='md'] {
+  --body-size: 15px;
+}
+
+:root[data-font-size='lg'] {
+  --body-size: 17px;
+}
+
+:root[data-layout='compact'] {
+  --container-max: 860px;
+}
+
+:root[data-layout='comfortable'] {
+  --container-max: 1080px;
+}
+
+:root[data-layout='wide'] {
+  --container-max: 1280px;
+}
+
+:root.dark {
+  --bg: #12141a;
+  --card: #1a1d24;
+  --ink: #e8eaed;
+  --muted: #9aa0a6;
+  --accent: #7c9aff;
+  --accent-soft: #243044;
+  --border: #2a2e36;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: var(--body-size);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  opacity: 0.85;
+}
+
+img {
+  max-width: 100%;
+}
+
+.container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding: 0 20px;
+  transition: max-width 0.2s ease;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+/* 深色下代码块/表格可读性 */
+:root.dark .markdown-body pre {
+  background: #0f1116;
+}
+
+:root.dark .markdown-body th,
+:root.dark .markdown-body td {
+  border-color: var(--border);
+}
+
+:root.dark .comment-form textarea,
+:root.dark .reply-form textarea {
+  background: var(--bg);
+  color: var(--ink);
+}
