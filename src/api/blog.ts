@@ -197,3 +197,23 @@ export function toggleLike(
 ): Promise<{ liked: boolean; likeCount: number }> {
   return request({ url: '/blog/like/toggle', method: 'post', params: { type, targetId } })
 }
+
+/** 发布/保存文章（需 blog:article:add） */
+export function saveArticle(data: {
+  title: string
+  summary?: string
+  content: string
+  coverUrl?: string
+  categoryId?: string | number | null
+  tagIds?: (string | number)[]
+  publishStatus?: number
+  isTop?: number
+  isRecommend?: number
+}): Promise<boolean> {
+  return request({ url: '/blog/article/save', method: 'post', data })
+}
+
+/** 新建标签（需 blog:tag:add） */
+export function saveTag(data: { name: string; slug?: string }): Promise<boolean> {
+  return request({ url: '/blog/tag/save', method: 'post', data })
+}

@@ -9,6 +9,7 @@
           <router-link to="/forum">{{ t('forum') }}</router-link>
           <router-link to="/archive">{{ t('archive') }}</router-link>
           <router-link to="/about">{{ t('about') }}</router-link>
+          <router-link to="/write">写文章</router-link>
         </nav>
         <div class="header-actions">
           <div class="search-box" role="search">
