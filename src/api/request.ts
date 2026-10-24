@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios'
-import { getToken } from '@/stores/auth'
+import { getToken, clearToken } from '@/stores/auth'
 
 /** 后端统一返回结构（与 common-core Result 对齐） */
 export interface Result<T> {
@@ -32,6 +32,15 @@ request.interceptors.request.use(config => {
   return config
 })
 
+/** 401：Token 失效或客户端不匹配时，丢弃本地登录态，避免旧 Token 一直带着请求 */
+function handleUnauthorized() {
+  if (!getToken()) return
+  clearToken()
+  window.dispatchEvent(
+    new CustomEvent('blog-toast', { detail: { type: 'warning', msg: '登录已失效，请重新登录' } })
+  )
+}
+
 request.interceptors.response.use(
   response => {
     const body = response.data as Result<unknown>
@@ -39,11 +48,21 @@ request.interceptors.response.use(
       if (body.code === 200) {
         return body.data as never
       }
+      if (body.code === 401) {
+        handleUnauthorized()
+      }
       return Promise.reject(new Error(body.message || '请求失败'))
     }
     return response.data as never
   },
   (error: AxiosError<Result<unknown>>) => {
+    const body = error.response?.data
+    if (
+      error.response?.status === 401 ||
+      (body && typeof body === 'object' && 'code' in body && body.code === 401)
+    ) {
+      handleUnauthorized()
+    }
     const message =
       error.response?.data?.message || error.message || '网络异常，请稍后重试'
     return Promise.reject(new Error(message))

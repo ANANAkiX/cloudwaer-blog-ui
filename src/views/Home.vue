@@ -1,8 +1,55 @@
 <template>
   <div class="home">
+    <aside class="home-left">
+      <section class="card side-card site-card">
+        <div class="site-avatar">{{ siteInitial }}</div>
+        <h4 class="site-name">{{ settingsStore.siteName }}</h4>
+        <p class="muted site-desc">{{ aboutText }}</p>
+        <div class="site-stats">
+          <div class="stat">
+            <strong>{{ total }}</strong>
+            <span>文章</span>
+          </div>
+          <div class="stat">
+            <strong>{{ categories.length }}</strong>
+            <span>分类</span>
+          </div>
+          <div class="stat">
+            <strong>{{ tags.length }}</strong>
+            <span>标签</span>
+          </div>
+        </div>
+        <router-link to="/about" class="more-link">关于本站 →</router-link>
+      </section>
+
+      <section class="card side-card">
+        <h4>导航</h4>
+        <ul class="cat-list">
+          <li
+            v-for="item in settingsStore.navItems"
+            :key="item.key || item.path"
+            :class="{ active: isActiveNav(item.path) }"
+            @click="goNav(item.path)"
+          >
+            {{ item.label || item.path }}
+          </li>
+        </ul>
+      </section>
+
+      <section class="card side-card">
+        <h4>快速入口</h4>
+        <ul class="cat-list">
+          <li :class="{ active: isActiveNav('/') }" @click="goNav('/')">全部文章</li>
+          <li :class="{ active: isActiveNav('/archive') }" @click="goNav('/archive')">归档</li>
+          <li :class="{ active: isActiveNav('/forum') }" @click="goNav('/forum')">微论坛</li>
+          <li :class="{ active: isActiveNav('/write') }" @click="goNav('/write')">写文章</li>
+        </ul>
+      </section>
+    </aside>
+
     <div class="home-main">
       <!-- 精选大卡（仅首页无筛选时展示） -->
-      <article v-if="featured" class="featured card" @click="goDetail(featured)">
+      <article v-if="showFeaturedCard" class="featured card" @click="goDetail(featured!)">
         <div class="cover">
           <span class="cover-mark">{{ (featured.title || '文').charAt(0) }}</span>
         </div>
@@ -75,7 +122,7 @@
         </ul>
       </section>
 
-      <section class="card side-card">
+      <section v-if="homeLayout.showTagCloud !== false" class="card side-card">
         <h4>标签云</h4>
         <div class="tags">
           <span
@@ -90,7 +137,7 @@
         </div>
       </section>
 
-      <section class="card side-card">
+      <section v-if="homeLayout.showHot !== false" class="card side-card">
         <h4>热门文章</h4>
         <ol class="hot-list">
           <li v-for="(h, i) in hotArticles" :key="h.id" @click="goDetail(h)">
@@ -103,7 +150,7 @@
 
       <section class="card side-card about">
         <h4>关于</h4>
-        <p class="muted">云记博客 — 技术实践与工程记录，由 cloudwaer-blog 驱动。</p>
+        <p class="muted">{{ aboutText }}</p>
         <router-link to="/about" class="more-link">了解更多 →</router-link>
       </section>
     </aside>
@@ -123,9 +170,29 @@ import {
   type TagItem
 } from '@/api/blog'
 import { formatDate } from '@/utils/date'
+import { useSettingsStore } from '@/stores/settings'
 
 const route = useRoute()
 const router = useRouter()
+const settingsStore = useSettingsStore()
+const homeLayout = computed(() => settingsStore.homeLayout)
+const showFeaturedCard = computed(() => homeLayout.value.showFeatured !== false && !!featured.value)
+const aboutText = computed(() => {
+  const desc = settingsStore.siteSetting?.siteDescription?.trim()
+  if (desc) return desc
+  return `${settingsStore.siteName} — 技术实践与工程记录，由 cloudwaer-blog 驱动。`
+})
+const siteInitial = computed(() => (settingsStore.siteName || '云').charAt(0))
+
+function isActiveNav(path: string) {
+  if (path === '/') return route.path === '/'
+  return route.path === path || route.path.startsWith(path + '/')
+}
+
+function goNav(path: string) {
+  if (!path) return
+  router.push(path)
+}
 
 const articles = ref<ArticleItem[]>([])
 const categories = ref<CategoryItem[]>([])
@@ -148,7 +215,7 @@ const featured = computed<ArticleItem | null>(() => {
 })
 
 const listItems = computed<ArticleItem[]>(() => {
-  if (!featured.value) return articles.value
+  if (!showFeaturedCard.value || !featured.value) return articles.value
   return articles.value.filter(a => a.id !== featured.value!.id)
 })
 
@@ -237,9 +304,72 @@ watch(
 <style scoped>
 .home {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 24px;
+  grid-template-columns: 220px minmax(0, 1fr) 280px;
+  gap: 20px;
   align-items: start;
+}
+
+.home-left {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: sticky;
+  top: 84px;
+}
+
+.site-card {
+  text-align: center;
+}
+
+.site-avatar {
+  width: 64px;
+  height: 64px;
+  margin: 4px auto 12px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 28px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.site-name {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.site-desc {
+  margin: 0 0 14px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.site-stats {
+  display: flex;
+  justify-content: space-around;
+  margin-bottom: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.site-stats .stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.site-stats .stat strong {
+  font-size: 16px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.site-stats .stat span {
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .featured {
@@ -515,8 +645,27 @@ watch(
   color: var(--muted);
 }
 
+/* 中等屏：左栏改为横排顶栏，主区 + 右栏 */
+@media (max-width: 1200px) {
+  .home {
+    grid-template-columns: minmax(0, 1fr) 280px;
+  }
+
+  .home-left {
+    grid-column: 1 / -1;
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+}
+
 @media (max-width: 900px) {
   .home {
+    grid-template-columns: 1fr;
+  }
+
+  .home-left {
     grid-template-columns: 1fr;
   }
 

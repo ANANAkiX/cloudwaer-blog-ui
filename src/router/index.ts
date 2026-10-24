@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import BlogLayout from '@/layouts/BlogLayout.vue'
+import { useSettingsStore } from '@/stores/settings'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -72,7 +73,13 @@ const router = createRouter({
 
 router.afterEach(to => {
   const title = to.meta.title as string | undefined
-  document.title = title ? `${title} · 云记博客` : '云记博客'
+  let siteName = '云记博客'
+  try {
+    siteName = useSettingsStore().siteName || siteName
+  } catch {
+    // pinia 未就绪时回落默认站名
+  }
+  document.title = title ? `${title} · ${siteName}` : siteName
 })
 
 export default router

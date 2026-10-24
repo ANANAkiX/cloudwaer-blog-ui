@@ -32,7 +32,7 @@ async function onSubmit() {
       message.error('登录未返回 Token')
       return
     }
-    setToken(token)
+    setToken(token, form.username.trim())
     message.success('登录成功')
     router.push('/write')
   } catch (e) {

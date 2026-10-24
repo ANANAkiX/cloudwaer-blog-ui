@@ -213,7 +213,72 @@ export function saveArticle(data: {
   return request({ url: '/blog/article/save', method: 'post', data })
 }
 
-/** 新建标签（需 blog:tag:add） */
-export function saveTag(data: { name: string; slug?: string }): Promise<boolean> {
+/** 新建标签（需 blog:tag:add），返回标签 ID */
+export function saveTag(data: { name: string; slug?: string }): Promise<string | number> {
   return request({ url: '/blog/tag/save', method: 'post', data })
+}
+
+/** 文章导入解析结果 */
+export interface ArticleImportResult {
+  title: string
+  content: string
+  filename?: string
+  textLength?: number
+}
+
+/** 导入 MD/TXT/PDF/DOCX → 标题+Markdown（需 blog:article:add，不落库） */
+export function importArticleFile(file: File): Promise<ArticleImportResult> {
+  const form = new FormData()
+  form.append('file', file)
+  return request({ url: '/blog/article/import', method: 'post', data: form })
+}
+
+/** ===== 站点设置（与 SiteSettingDTO 对齐） ===== */
+
+/** 导航菜单项（blog_site_setting.nav JSON） */
+export interface NavSettingItem {
+  key?: string
+  label?: string
+  path?: string
+  visible?: boolean
+  order?: number
+}
+
+/** 独立页面文案（blog_site_setting.pages JSON 值） */
+export interface PageSettingItem {
+  title?: string
+  content?: string
+}
+
+/** 文章详情布局（blog_site_setting.articleLayout JSON） */
+export interface ArticleLayoutSetting {
+  /** left | right | off */
+  tocPosition?: string
+}
+
+/** 首页模块开关（blog_site_setting.homeLayout JSON） */
+export interface HomeLayoutSetting {
+  showFeatured?: boolean
+  showTagCloud?: boolean
+  showHot?: boolean
+}
+
+export interface SiteSetting {
+  siteTitle?: string
+  siteDescription?: string
+  favicon?: string
+  /** 是否开启搜索：0-关闭，1-开启 */
+  enableSearch?: number
+  /** 网站布局：default / compact / magazine */
+  layout?: string
+  footerText?: string
+  nav?: NavSettingItem[]
+  pages?: Record<string, PageSettingItem>
+  articleLayout?: ArticleLayoutSetting
+  homeLayout?: HomeLayoutSetting
+}
+
+/** 公开读站点设置（匿名） */
+export function getOpenSiteSetting(): Promise<SiteSetting> {
+  return request({ url: '/blog/open/setting', method: 'get' })
 }
