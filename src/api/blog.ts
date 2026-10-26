@@ -77,6 +77,8 @@ export interface CommentItem {
   /** 附图列表（/blog/uploads/**） */
   images?: string[] | null
   likeCount: number
+  /** 当前登录用户是否已赞过 */
+  liked?: boolean
   createTime?: string | null
   replies?: CommentItem[]
   /** 楼中楼总数（树分页回填） */

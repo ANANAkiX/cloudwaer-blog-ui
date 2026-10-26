@@ -412,6 +412,8 @@ async function load() {
       await new Promise(r => setTimeout(r, 120))
     }
     article.value = data
+    // 回填「我是否赞过」：刷新后按钮不应退回未赞状态（否则再点会误取消）
+    articleLiked.value = !!data.liked
     rendered.value = marked.parse(data.content || '') as string
     document.title = `${data.title} · ${settingsStore.siteName}`
     updateMeta('description', data.summary || data.title)

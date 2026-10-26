@@ -93,6 +93,14 @@
             </div>
             <div class="comment-ops">
               <button class="link-btn" type="button" @click="startReply(c)">回复</button>
+              <button
+                class="link-btn like-btn-sm"
+                :class="{ liked: c.liked }"
+                type="button"
+                @click="onToggleLike(c)"
+              >
+                {{ c.liked ? '已赞' : '赞' }} {{ c.likeCount ?? 0 }}
+              </button>
             </div>
 
             <div v-if="repliesOf(c).length" class="reply-list">
@@ -118,6 +126,14 @@
                   </div>
                   <div class="comment-ops">
                     <button class="link-btn" type="button" @click="startReply(c, r)">回复</button>
+                    <button
+                      class="link-btn like-btn-sm"
+                      :class="{ liked: r.liked }"
+                      type="button"
+                      @click="onToggleLike(r)"
+                    >
+                      {{ r.liked ? '已赞' : '赞' }} {{ r.likeCount ?? 0 }}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -153,8 +169,10 @@ import {
   getCommentTreePage,
   toPublicUrl,
   uploadCommentImage,
+  toggleLike,
   type CommentItem
 } from '@/api/blog'
+import { message } from '@/api/request'
 import { formatDate } from '@/utils/date'
 
 const props = defineProps<{ articleId: string | number }>()
@@ -319,6 +337,17 @@ function startReply(root: CommentItem, reply?: CommentItem) {
 
 function cancelReply() {
   replyTo.value = null
+}
+
+/** 评论点赞（type=2）：就地更新该条的 liked / likeCount */
+async function onToggleLike(c: CommentItem) {
+  try {
+    const res = await toggleLike(2, c.id)
+    c.liked = res.liked
+    c.likeCount = res.likeCount
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : '点赞失败，请登录后重试')
+  }
 }
 
 function insertEmoji(e: string) {
@@ -625,6 +654,15 @@ watch(
 .link-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.like-btn-sm {
+  margin-left: 12px;
+}
+
+.like-btn-sm.liked {
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .comment-item {
