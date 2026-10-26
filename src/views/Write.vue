@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { goLogin } from '@/router'
 import { marked } from 'marked'
 import {
   getCategoryList,
@@ -10,7 +11,10 @@ import {
   saveArticle,
   saveTag,
   uploadImage,
+  toPublicUrl,
   importArticleFile,
+  getMyArticleDetail,
+  updateMyArticle,
   type CategoryItem,
   type CollectionItem,
   type TagItem
@@ -27,11 +31,18 @@ const message = {
 }
 
 const router = useRouter()
+const route = useRoute()
+
+/** 编辑模式：/write?id=xxx 载入我的文章 */
+const editingId = ref<string | null>(null)
+/** 载入时的原始状态：编辑时「保存」保持它，避免已发布文章被误存为草稿 */
+const editingStatus = ref(0)
+const isEditing = computed(() => !!editingId.value)
+const loadingArticle = ref(false)
 
 const categories = ref<CategoryItem[]>([])
 const tags = ref<TagItem[]>([])
 const collections = ref<CollectionItem[]>([])
-const newCollectionName = ref('')
 const creatingCollection = ref(false)
 const submitting = ref(false)
 const settingsStore = useSettingsStore()
@@ -159,7 +170,7 @@ const onImportFile = async (event: Event) => {
   if (!file) return
   if (!getToken()) {
     message.warning('请先登录')
-    router.push('/login')
+    goLogin()
     input.value = ''
     return
   }
@@ -222,22 +233,33 @@ function removeTag(id: string | number) {
   if (idx >= 0) form.tagIds.splice(idx, 1)
 }
 
-async function onCreateCollection() {
-  const name = newCollectionName.value.trim()
-  if (!name) return
+/**
+ * 解析合集选择：allow-create 会把输入的新名称直接塞进 v-model，
+ * 所以提交前按「已有 id → 已有同名 → 新建」三级处理，最终拿数字 id。
+ */
+async function resolveCollectionId(): Promise<string | number | null> {
+  const raw = form.collectionId
+  if (raw == null || String(raw).trim() === '') return null
+  const val = String(raw).trim()
+
+  const byId = collections.value.find(c => String(c.id) === val)
+  if (byId) return byId.id
+
+  const byName = collections.value.find(c => c.name === val)
+  if (byName) return byName.id
+
+  // 输入的是新名称 → 创建后回填
   creatingCollection.value = true
   try {
-    await saveMyCollection({ name })
+    await saveMyCollection({ name: val })
     const list = await getMyCollections().catch(() => [])
     collections.value = list || []
-    const created = collections.value.find(c => c.name === name)
-    if (created) {
-      form.collectionId = created.id
-    }
-    newCollectionName.value = ''
-    message.success(`已创建合集「${name}」`)
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : '创建合集失败')
+    const created = collections.value.find(c => c.name === val)
+    if (!created) throw new Error('创建成功但未在列表中找到，请重试')
+    // 回写为数字 id，避免二次提交重复走创建
+    form.collectionId = created.id
+    message.success(`已创建合集「${val}」`)
+    return created.id
   } finally {
     creatingCollection.value = false
   }
@@ -287,10 +309,34 @@ function onDocClick(e: MouseEvent) {
   if (root && !root.contains(e.target as Node)) closeTagDropdown()
 }
 
+/** 载入我的文章到编辑器 */
+async function loadForEdit(id: string) {
+  loadingArticle.value = true
+  try {
+    const detail = await getMyArticleDetail(id)
+    editingId.value = String(detail.id)
+    editingStatus.value = detail.publishStatus ?? 0
+    form.title = detail.title || ''
+    form.summary = detail.summary || ''
+    form.content = detail.content || ''
+    form.coverUrl = detail.coverUrl || ''
+    form.categoryId = detail.categoryId ?? null
+    form.collectionId = detail.collectionId ?? null
+    form.tagIds = (detail.tags || []).map(t => t.id)
+    if (editorMode.value === 'md') refreshPreview()
+    message.success('已载入文章，可直接修改')
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : '文章载入失败')
+    router.push('/profile?tab=articles')
+  } finally {
+    loadingArticle.value = false
+  }
+}
+
 const onSubmit = async (publish: boolean) => {
   if (!getToken()) {
     message.warning('请先登录')
-    router.push('/login')
+    goLogin()
     return
   }
   syncRichToForm()
@@ -300,24 +346,33 @@ const onSubmit = async (publish: boolean) => {
   }
   submitting.value = true
   try {
-    const status = await saveArticle({
+    // 输入了不存在的合集名 → 这里自动创建并换成数字 id
+    const collectionId = await resolveCollectionId()
+    const payload = {
       title: form.title.trim(),
       summary: form.summary?.trim() || undefined,
       content: form.content,
       coverUrl: form.coverUrl || undefined,
       categoryId: form.categoryId || null,
-      collectionId: form.collectionId || null,
-      tagIds: form.tagIds.map(String).filter(s => /^\d+$/.test(s)),
-      publishStatus: publish ? 1 : 0
-    })
+      collectionId,
+      tagIds: form.tagIds.map(String).filter(s => /^\d+$/.test(s))
+    }
+    const status = editingId.value
+      ? await updateMyArticle({
+          ...payload,
+          id: editingId.value,
+          // 编辑时「保存」保持原发布状态；「发布」才推到上线（后端按状态机决定是否送审）
+          publishStatus: publish ? 1 : editingStatus.value
+        })
+      : await saveArticle({ ...payload, publishStatus: publish ? 1 : 0 })
     if (status === 3) {
       message.success('已提交，等待管理员审核通过后对外可见')
     } else if (status === 1) {
       message.success('已发布')
     } else {
-      message.success('已保存草稿')
+      message.success(editingId.value ? '已保存' : '已保存草稿')
     }
-    router.push('/')
+    router.push(editingId.value ? '/profile?tab=articles' : '/')
   } catch (e) {
     message.error(e instanceof Error ? e.message : '保存失败')
   } finally {
@@ -328,7 +383,7 @@ const onSubmit = async (publish: boolean) => {
 onMounted(async () => {
   if (!getToken()) {
     message.warning('请先登录后再写文章')
-    router.push('/login')
+    goLogin()
     return
   }
   document.addEventListener('click', onDocClick)
@@ -344,6 +399,10 @@ onMounted(async () => {
   } catch {
     /* ignore */
   }
+  const editId = route.query.id
+  if (editId) {
+    await loadForEdit(String(editId))
+  }
 })
 
 onBeforeUnmount(() => {
@@ -356,10 +415,14 @@ onBeforeUnmount(() => {
     <!-- 顶栏：标题 + 次要操作（发布在右栏） -->
     <el-card class="page-head" shadow="never">
       <div class="head-main">
-        <button type="button" class="back-link" @click="router.push('/')">← 返回</button>
+        <button type="button" class="back-link" @click="router.push(isEditing ? '/profile?tab=articles' : '/')">
+          ← 返回
+        </button>
         <div>
-          <h2>写文章</h2>
-          <p class="muted">左侧编辑 · 右侧发布设置 · 预览为悬浮层</p>
+          <h2>{{ isEditing ? '编辑文章' : '写文章' }}</h2>
+          <p class="muted">
+            {{ loadingArticle ? '正在载入文章…' : '左侧编辑 · 右侧发布设置 · 预览为悬浮层' }}
+          </p>
         </div>
       </div>
       <div class="head-actions">
@@ -469,7 +532,12 @@ onBeforeUnmount(() => {
             :class="{ has: !!form.coverUrl }"
             @click="coverFile?.click()"
           >
-            <img v-if="form.coverUrl" :src="form.coverUrl" alt="封面预览" class="cover-preview" />
+            <img
+              v-if="form.coverUrl"
+              :src="toPublicUrl(form.coverUrl)"
+              alt="封面预览"
+              class="cover-preview"
+            />
             <div v-else class="cover-placeholder">
               <span>点击上传封面</span>
               <span class="muted small">建议 16:9</span>
@@ -499,27 +567,24 @@ onBeforeUnmount(() => {
 
         <div class="side-field">
           <span class="side-label">合集</span>
-          <div class="side-row">
-            <el-select v-model="form.collectionId" clearable placeholder="不加入合集" class="side-select">
-              <el-option
-                v-for="c in collections"
-                :key="String(c.id)"
-                :label="c.name"
-                :value="c.id"
-              />
-            </el-select>
-            <el-button :loading="creatingCollection" :disabled="!newCollectionName.trim()" @click="onCreateCollection">
-              新建
-            </el-button>
-          </div>
-          <el-input
-            v-model="newCollectionName"
-            class="side-inline-input"
-            size="small"
-            maxlength="100"
-            placeholder="新合集名称，可选"
+          <!-- 可输入下拉：选已有合集，或输入新名称回车/提交时自动创建 -->
+          <el-select
+            v-model="form.collectionId"
+            class="side-select side-select-full"
             clearable
-          />
+            filterable
+            allow-create
+            default-first-option
+            :loading="creatingCollection"
+            placeholder="输入或选择合集，新名称将自动创建"
+          >
+            <el-option
+              v-for="c in collections"
+              :key="String(c.id)"
+              :label="c.name"
+              :value="c.id"
+            />
+          </el-select>
         </div>
 
         <div class="side-field tag-select" @click.stop="openTagDropdown">
@@ -574,8 +639,20 @@ onBeforeUnmount(() => {
 
         <div class="publish-actions">
           <p v-if="auditHint" class="publish-audit-hint">本站开启发布审核：非管理员发布需审核通过后才对外可见</p>
-          <el-button class="publish-draft" :disabled="submitting" @click="onSubmit(false)">存草稿</el-button>
-          <el-button class="publish-primary" type="primary" :loading="submitting" @click="onSubmit(true)">
+          <el-button
+            class="publish-draft"
+            :disabled="submitting || loadingArticle"
+            @click="onSubmit(false)"
+          >
+            {{ isEditing ? '保存' : '存草稿' }}
+          </el-button>
+          <el-button
+            class="publish-primary"
+            type="primary"
+            :loading="submitting"
+            :disabled="loadingArticle"
+            @click="onSubmit(true)"
+          >
             {{ submitting ? '提交中…' : '发布' }}
           </el-button>
         </div>
@@ -736,10 +813,6 @@ onBeforeUnmount(() => {
 .side-select {
   flex: 1;
   min-width: 0;
-}
-
-.side-inline-input {
-  margin-top: -2px;
 }
 
 .cover-drop {

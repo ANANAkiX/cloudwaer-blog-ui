@@ -88,4 +88,32 @@ router.afterEach(to => {
   document.title = title ? `${title} · ${siteName}` : siteName
 })
 
+/**
+ * 登录后落地地址解析：只接受站内绝对路径，防开放重定向。
+ * 无合法 redirect → 首页 '/'
+ */
+export function resolveLoginRedirect(redirect: unknown): string {
+  const raw = Array.isArray(redirect) ? redirect[0] : redirect
+  if (typeof raw !== 'string' || !raw) return '/'
+  // 必须以单个 / 开头：排除 //evil.com、/\evil.com 与外链
+  if (!raw.startsWith('/') || raw.startsWith('//') || raw.includes('\\')) return '/'
+  if (raw === '/login' || raw.startsWith('/login?')) return '/'
+  return raw
+}
+
+/**
+ * 跳转登录页并记住来源：
+ * - goLogin()         → 登录后回到当前页（含 query，如 /write?id=1、/profile?tab=articles）
+ * - goLogin('/write') → 登录后去指定页
+ */
+export function goLogin(target?: string) {
+  const current = router.currentRoute.value
+  if (current.path === '/login') {
+    router.push('/')
+    return
+  }
+  const dest = target ?? current.fullPath
+  router.push(dest === '/' ? '/login' : { path: '/login', query: { redirect: dest } })
+}
+
 export default router

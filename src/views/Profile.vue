@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { goLogin } from '@/router'
 import { getToken, getUsername, setAvatar } from '@/stores/auth'
 import { formatDate } from '@/utils/date'
 import {
@@ -13,8 +14,16 @@ import {
   getMyProfile,
   updateMyProfile,
   uploadMyFile,
+  applyAuthor,
+  getMyAuthorApply,
+  getMyBloggerStatus,
+  deleteMyArticle,
+  updateMyArticle,
+  getMyArticleDetail,
   type ArticleItem,
-  type CollectionItem
+  type CollectionItem,
+  type AuthorApply,
+  type BloggerStatus
 } from '@/api/blog'
 import {
   ElCard,
@@ -38,6 +47,7 @@ import {
 } from 'element-plus'
 
 const router = useRouter()
+const route = useRoute()
 const username = computed(() => getUsername())
 /** 展示名：昵称优先，回退账号 */
 const displayName = ref('')
@@ -117,13 +127,149 @@ async function loadCollections() {
 
 function onTabChange(name: TabKey | string) {
   activeTab.value = name as TabKey
-  if (name === 'overview') void loadOverview()
+  if (name === 'overview') {
+    void loadOverview()
+    void loadBloggerApply()
+    void loadBloggerStatus()
+  }
   if (name === 'articles') void loadArticles()
   if (name === 'collections') void loadCollections()
 }
 
+// ===== 博客主申请 =====
+const bloggerApply = ref<AuthorApply | null>(null)
+const applyReason = ref('')
+const applying = ref(false)
+/** 自助查询的暂停状态（管理员在管理端封禁后，这里可见） */
+const bloggerStatus = ref<BloggerStatus | null>(null)
+/** 接口失败与「无封禁记录」必须区分：失败时不能伪装成正常 */
+const statusError = ref(false)
+
+const suspended = computed(() => !!bloggerStatus.value?.suspended)
+
+const suspendUntilText = computed(() => {
+  const s = bloggerStatus.value
+  if (!s?.suspended) return '永久'
+  return s.suspendUntil ? formatDate(s.suspendUntil) : '永久'
+})
+
+async function loadBloggerStatus() {
+  if (!getToken()) return
+  try {
+    bloggerStatus.value = await getMyBloggerStatus()
+    statusError.value = false
+  } catch (e) {
+    bloggerStatus.value = null
+    statusError.value = true
+    console.warn('[blog] 暂停状态获取失败', e)
+  }
+}
+
+const bloggerStatusTag = computed(() => {
+  const s = bloggerApply.value?.applyStatus
+  if (s === 0) return { label: '审核中', type: 'warning' as const }
+  if (s === 1) return { label: '已通过', type: 'success' as const }
+  if (s === 2) return { label: '已拒绝', type: 'danger' as const }
+  return { label: '未申请', type: 'info' as const }
+})
+
+/** 未申请 或 被拒后都可再次提交 */
+const canApplyBlogger = computed(
+  () => !bloggerApply.value || bloggerApply.value.applyStatus === 2
+)
+
+async function loadBloggerApply() {
+  if (!getToken()) return
+  try {
+    bloggerApply.value = await getMyAuthorApply()
+  } catch {
+    bloggerApply.value = null
+  }
+}
+
+async function submitBloggerApply() {
+  if (!getToken()) {
+    goLogin()
+    return
+  }
+  applying.value = true
+  try {
+    await applyAuthor(applyReason.value.trim() || undefined)
+    applyReason.value = ''
+    ElMessage.success('申请已提交，管理员审核通过后你即可发布文章')
+    bloggerApply.value = await getMyAuthorApply()
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '申请失败，请稍后再试')
+  } finally {
+    applying.value = false
+  }
+}
+
 function goArticle(id: string | number) {
   router.push(`/article/${id}`)
+}
+
+// ===== 我的文章：编辑 / 查看 / 下线 / 删除 =====
+function editArticle(id: string | number) {
+  router.push(`/write?id=${id}`)
+}
+
+/** 已发布看前台，其它状态（草稿/待审/已下线）进编辑器查看 */
+function viewArticle(a: ArticleItem) {
+  if (a.publishStatus === 1) goArticle(a.id)
+  else editArticle(a.id)
+}
+
+async function removeArticle(a: ArticleItem) {
+  try {
+    await ElMessageBox.confirm(`删除「${a.title}」？其楼中楼评论会一并删除，不可恢复。`, '删除文章', {
+      confirmButtonText: '确定删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  try {
+    await deleteMyArticle(a.id)
+    ElMessage.success('已删除')
+    if (activeTab.value === 'articles') void loadArticles()
+    else void loadOverview()
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '删除失败')
+  }
+}
+
+/** 下线：取详情后改 publishStatus=2（列表行不带正文，接口要求标题正文必填） */
+async function offlineArticle(a: ArticleItem) {
+  try {
+    await ElMessageBox.confirm(`下线「${a.title}」？下线后前台不再展示，可随时重新发布。`, '下线文章', {
+      confirmButtonText: '确定下线',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  try {
+    const detail = await getMyArticleDetail(a.id)
+    await updateMyArticle({
+      id: detail.id,
+      title: detail.title,
+      summary: detail.summary || undefined,
+      content: detail.content || '',
+      coverUrl: detail.coverUrl || undefined,
+      categoryId: detail.categoryId ?? null,
+      collectionId: detail.collectionId ?? null,
+      tagIds: (detail.tags || []).map(t => t.id),
+      publishStatus: 2
+    })
+    ElMessage.success('已下线')
+    if (activeTab.value === 'articles') void loadArticles()
+    else void loadOverview()
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '下线失败')
+  }
 }
 
 function statusLabel(s?: number) {
@@ -322,11 +468,21 @@ async function saveAccount() {
 
 onMounted(() => {
   if (!getToken()) {
-    router.replace('/login')
+    // 用 replace 并记住来源：避免回退键在 /profile ↔ /login 之间来回弹
+    router.replace({ path: '/login', query: { redirect: route.fullPath } })
     return
+  }
+  // 支持 /profile?tab=articles 直达（写文章保存后回跳）
+  const tab = route.query.tab
+  if (tab === 'articles' || tab === 'collections' || tab === 'account' || tab === 'overview') {
+    activeTab.value = tab
   }
   void loadAccount()
   void loadOverview()
+  void loadBloggerApply()
+  void loadBloggerStatus()
+  if (activeTab.value === 'articles') void loadArticles()
+  if (activeTab.value === 'collections') void loadCollections()
 })
 
 watch(articleQuery, () => {
@@ -375,6 +531,46 @@ watch(articleQuery, () => {
         <div class="main-head">
           <h2>概览</h2>
         </div>
+
+        <!-- 博客主申请 -->
+        <section class="apply-card">
+          <div class="apply-head">
+            <strong>博客主申请</strong>
+            <el-tag size="small" :type="bloggerStatusTag.type">{{ bloggerStatusTag.label }}</el-tag>
+            <el-tag v-if="suspended" size="small" type="danger">封禁中</el-tag>
+          </div>
+
+          <!-- 暂停状态优先展示：封禁期内无法发布，覆盖「已通过」的乐观文案 -->
+          <p v-if="suspended" class="apply-suspend">
+            博客主权限已封禁至 {{ suspendUntilText }}<template v-if="bloggerStatus?.suspendReason">（{{ bloggerStatus.suspendReason }}）</template>，到期自动恢复，期间无法发布新文章。
+          </p>
+
+          <template v-if="canApplyBlogger">
+            <div class="apply-form">
+              <el-input
+                v-model="applyReason"
+                maxlength="255"
+                clearable
+                placeholder="申请理由（可选）：写作方向、更新频率…"
+              />
+              <el-button type="primary" :loading="applying" @click="submitBloggerApply">
+                申请成为博客主
+              </el-button>
+            </div>
+            <p v-if="bloggerApply?.applyStatus === 2" class="apply-remark">
+              上次被拒：{{ bloggerApply.handleRemark || '管理员未填写理由' }}
+            </p>
+          </template>
+
+          <p v-else-if="bloggerApply?.applyStatus === 0" class="apply-note muted">
+            申请已提交于 {{ formatDate(bloggerApply.createTime) }}，审核通过后即可发布文章。
+          </p>
+          <p v-else-if="suspended" class="apply-note muted">申请已通过，当前处于封禁期。</p>
+          <p v-else-if="statusError" class="apply-note muted">
+            暂停状态暂未获取到（见控制台 [blog] 日志），先按正常展示；若你已被封禁请联系管理员核实。
+          </p>
+          <p v-else class="apply-note apply-ok">已通过，你现在可以发布自己的文章了。</p>
+        </section>
 
         <div class="metric-row">
           <div class="metric">
@@ -447,14 +643,29 @@ watch(articleQuery, () => {
         </div>
         <div class="table-like">
           <div v-for="a in articles" :key="a.id" class="row">
-            <div class="row-main" @click="goArticle(a.id)">
+            <div class="row-main" @click="viewArticle(a)">
               <strong>{{ a.title }}</strong>
               <span class="muted small">
                 {{ statusLabel(a.publishStatus) }} · {{ formatDate(a.publishTime || a.createTime) }}
               </span>
               <span v-if="a.auditRemark" class="audit-remark">审核意见：{{ a.auditRemark }}</span>
             </div>
-            <el-button link type="primary" size="small">编辑（后续）</el-button>
+            <div class="row-actions">
+              <el-button link type="primary" size="small" @click.stop="editArticle(a.id)">编辑</el-button>
+              <el-button link type="info" size="small" @click.stop="viewArticle(a)">
+                {{ a.publishStatus === 1 ? '查看' : '预览' }}
+              </el-button>
+              <el-button
+                v-if="a.publishStatus === 1"
+                link
+                type="warning"
+                size="small"
+                @click.stop="offlineArticle(a)"
+              >
+                下线
+              </el-button>
+              <el-button link type="danger" size="small" @click.stop="removeArticle(a)">删除</el-button>
+            </div>
           </div>
           <el-empty v-if="!articles.length" description="暂无文章" :image-size="80" />
         </div>
@@ -1173,6 +1384,66 @@ watch(articleQuery, () => {
   font-size: 12px;
   color: var(--el-color-danger);
   word-break: break-word;
+}
+
+.apply-card {
+  margin: 0 0 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+}
+
+.apply-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.apply-head strong {
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.apply-form {
+  display: flex;
+  gap: 10px;
+}
+
+.apply-form :deep(.el-input) {
+  flex: 1;
+}
+
+.apply-remark {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--el-color-danger);
+  word-break: break-word;
+}
+
+.apply-note {
+  margin: 0;
+  font-size: 13px;
+}
+
+.apply-ok {
+  color: var(--el-color-success);
+}
+
+.apply-suspend {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--el-color-danger);
+  word-break: break-word;
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
 }
 
 .pager {

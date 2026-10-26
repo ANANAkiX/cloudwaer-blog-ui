@@ -186,6 +186,46 @@ export function addComment(payload: CommentSavePayload): Promise<string | number
   return request({ url: '/blog/comment/add', method: 'post', data: payload })
 }
 
+/** ===== 博客主申请 ===== */
+export interface AuthorApply {
+  id: string | number
+  userId: string | number
+  username?: string
+  nickname?: string
+  reason?: string | null
+  /** 0-待处理，1-已通过，2-已拒绝 */
+  applyStatus: number
+  handleUser?: string | null
+  handleTime?: string | null
+  handleRemark?: string | null
+  createTime?: string | null
+}
+
+/** 自助申请成为博客主（登录即可，`blog:author:apply`） */
+export function applyAuthor(reason?: string): Promise<string | number> {
+  return request({ url: '/blog/author/apply', method: 'post', params: { reason: reason || undefined } })
+}
+
+/** 我的最近一次申请（无记录返回 null） */
+export function getMyAuthorApply(): Promise<AuthorApply | null> {
+  return request({ url: '/blog/author/my', method: 'get' })
+}
+
+/** 我的博客主暂停状态（登录即可；无记录返回 null） */
+export interface BloggerStatus {
+  userId: string | number
+  /** 当前是否暂停中（已到期即 false） */
+  suspended: boolean
+  suspendUntil?: string | null
+  suspendReason?: string | null
+  handleUser?: string | null
+  updateTime?: string | null
+}
+
+export function getMyBloggerStatus(): Promise<BloggerStatus | null> {
+  return request({ url: '/blog/blogger/my-status', method: 'get' })
+}
+
 /** ===== 微论坛 ===== */
 export interface TopicItem {
   id: string | number

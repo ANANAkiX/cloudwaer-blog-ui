@@ -48,11 +48,11 @@
               </button>
             </template>
             <div class="user-menu" role="menu">
-              <button type="button" class="menu-item" role="menuitem" @click="openSettings">
-                设置
-              </button>
               <button type="button" class="menu-item" role="menuitem" @click="goProfile">
                 个人中心
+              </button>
+              <button type="button" class="menu-item" role="menuitem" @click="openSettings">
+                设置
               </button>
               <button v-if="isLoggedIn" type="button" class="menu-item danger" role="menuitem" @click="onLogout">
                 退出登录
@@ -85,13 +85,14 @@
 </template>
 
 <script setup lang="ts">
-import {computed, onMounted, ref} from 'vue'
+import {computed, onMounted, ref, watch} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {Search} from '@element-plus/icons-vue'
 import ReadingProgress from '@/components/ReadingProgress.vue'
 import SettingsPanel from '@/components/SettingsPanel.vue'
 import {useSettingsStore} from '@/stores/settings'
 import {getToken, getUsername, getAvatar, setAvatar, clearToken} from '@/stores/auth'
+import {goLogin as goToLogin} from '@/router'
 import {ElMessage} from 'element-plus'
 import type {NavSettingItem} from '@/api/blog'
 import {getMyProfile} from '@/api/blog'
@@ -138,7 +139,7 @@ function onSearch() {
 
 function goWrite() {
   if (!getToken()) {
-    router.push('/login')
+    goToLogin('/write')
     return
   }
   router.push('/write')
@@ -150,35 +151,48 @@ function goUser() {
 
 function goProfile() {
   if (!isLoggedIn.value) {
-    router.push('/login')
+    goToLogin('/profile')
     return
   }
   router.push('/profile')
 }
 
+/** 头像菜单「登录」：登录后留在当前页 */
 function goLogin() {
-  router.push('/login')
+  goToLogin()
 }
 
 function openSettings() {
   settingsOpen.value = true
 }
 
-onMounted(async () => {
-  if (isLoggedIn.value && !avatarUrl.value) {
-    try {
-      const p = await getMyProfile()
-      if (p.avatar) setAvatar(p.avatar)
-    } catch {
-      /* ignore */
-    }
+onMounted(() => {
+  void syncAvatar()
+})
+
+// 登录发生在布局挂载之后（/login 是本布局子路由），必须监听登录态补拉一次头像
+watch(isLoggedIn, (loggedIn, wasLoggedIn) => {
+  if (loggedIn && !wasLoggedIn) {
+    void syncAvatar()
   }
 })
+
+/** 登录态下同步头像；个人中心改头像后 setAvatar 会触发 avatarUrl 重算 */
+async function syncAvatar() {
+  if (!isLoggedIn.value) return
+  try {
+    const p = await getMyProfile()
+    setAvatar(p.avatar || '')
+  } catch {
+    /* 拉取失败保留本地缓存 */
+  }
+}
 
 function onLogout() {
   clearToken()
   ElMessage.success('已退出登录')
-  router.push('/')
+
+  router.push('/home')
 }
 </script>
 
@@ -260,6 +274,7 @@ function onLogout() {
 .avatar-btn {
   width: 40px;
   height: 40px;
+  padding: 0;
   border-radius: 50%;
   border: 1px solid var(--border);
   background: var(--accent-soft);

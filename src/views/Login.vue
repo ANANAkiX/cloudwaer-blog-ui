@@ -1,13 +1,18 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import request from '@/api/request'
 import { setToken } from '@/stores/auth'
+import { resolveLoginRedirect } from '@/router'
 import { ElCard, ElForm, ElFormItem, ElInput, ElButton, ElMessage } from 'element-plus'
 
 const router = useRouter()
+const route = useRoute()
 const form = reactive({ username: '', password: '' })
 const loading = ref(false)
+
+/** 是否带了回跳目标（用于副标题文案） */
+const hasRedirect = !!route.query.redirect
 
 async function onSubmit() {
   if (!form.username || !form.password) {
@@ -34,7 +39,8 @@ async function onSubmit() {
     }
     setToken(token, form.username.trim())
     ElMessage.success('登录成功')
-    router.push('/write')
+    // 有来源页回来源页，否则回首页
+    router.push(resolveLoginRedirect(route.query.redirect))
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : '登录失败')
   } finally {
@@ -48,8 +54,8 @@ async function onSubmit() {
     <el-card class="login-card" shadow="never">
       <template #header>
         <div class="login-head">
-          <h2>登录后写作</h2>
-          <p class="muted">使用后台账号登录，需具备「新增文章」权限</p>
+          <h2>{{ hasRedirect ? '登录后继续' : '登录' }}</h2>
+          <p class="muted">{{ hasRedirect ? '' : '使用后台账号登录' }}</p>
         </div>
       </template>
       <el-form label-position="top" @submit.prevent="onSubmit">
