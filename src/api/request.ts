@@ -41,12 +41,31 @@ function handleUnauthorized() {
   )
 }
 
+/** 后端把 Long 统一序列化为字符串（JacksonConfig，防 ID 精度丢失），分页四字段因此是 "3" 这类字符串。
+ *  这里在边界还原成数字，使 PageResult 的 number 类型与运行时一致，避免 Vue prop 校验报警。
+ *  只处理分页字段，ID 等其它 Long 保持字符串。 */
+function normalizePageResult(data: unknown): unknown {
+  if (!data || typeof data !== 'object' || !Array.isArray((data as PageResult<unknown>).records)) {
+    return data
+  }
+  const page = data as PageResult<unknown>
+  const toNum = (v: unknown, fallback: number) => {
+    const n = Number(v)
+    return Number.isFinite(n) ? n : fallback
+  }
+  page.total = toNum(page.total, 0)
+  page.current = toNum(page.current, 1)
+  page.size = toNum(page.size, 10)
+  page.pages = toNum(page.pages, 0)
+  return page
+}
+
 request.interceptors.response.use(
   response => {
     const body = response.data as Result<unknown>
     if (body && typeof body === 'object' && 'code' in body) {
       if (body.code === 200) {
-        return body.data as never
+        return normalizePageResult(body.data) as never
       }
       if (body.code === 401) {
         handleUnauthorized()

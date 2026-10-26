@@ -1,10 +1,13 @@
 <template>
-  <div v-if="open" class="settings-overlay" @click.self="open = false">
-    <aside class="settings-panel card" role="dialog" :aria-label="t('settings')">
-      <header class="panel-head">
-        <h3>{{ t('settings') }}</h3>
-        <button class="close-btn" type="button" @click="open = false" :title="t('close')">✕</button>
-      </header>
+  <Teleport to="body">
+    <Transition name="fade">
+      <div v-if="open" class="settings-overlay" @click.self="open = false">
+        <Transition name="slide-right" appear>
+          <aside class="settings-panel card" role="dialog" :aria-label="t('settings')">
+            <header class="panel-head">
+              <h3>{{ t('settings') }}</h3>
+              <button class="close-btn" type="button" @click="open = false" :title="t('close')">✕</button>
+            </header>
 
       <section class="section">
         <h4>{{ t('theme') }}</h4>
@@ -74,8 +77,11 @@
       <footer class="panel-foot">
         <button class="reset-btn" type="button" @click="store.reset()">{{ t('reset') }}</button>
       </footer>
-    </aside>
-  </div>
+          </aside>
+        </Transition>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
@@ -133,18 +139,6 @@ const layoutOptions: { value: LayoutMode; label: string }[] = [
   flex-direction: column;
   gap: 18px;
   box-shadow: -8px 0 32px rgba(0, 0, 0, 0.12);
-  animation: slide-in 0.18s ease;
-}
-
-@keyframes slide-in {
-  from {
-    transform: translateX(16px);
-    opacity: 0.6;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
 }
 
 .panel-head {

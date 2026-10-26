@@ -1,62 +1,43 @@
 <template>
-  <div v-if="article" class="article-page" :class="'toc-' + tocPosition">
+  <div v-if="article || switching" class="article-page" :class="{ switching }">
     <aside class="article-left">
-      <section class="card side-card author-card">
-        <div class="author-avatar">{{ (article.authorName || '作').charAt(0) }}</div>
-        <h4 class="author-name">{{ article.authorName }}</h4>
-        <p class="muted author-site">发表于 {{ settingsStore.siteName }}</p>
-        <div class="site-stats">
-          <div class="stat">
-            <strong>{{ article.viewCount }}</strong>
-            <span>阅读</span>
-          </div>
-          <div class="stat">
-            <strong>{{ article.likeCount }}</strong>
-            <span>点赞</span>
-          </div>
-          <div class="stat">
-            <strong>{{ article.commentCount }}</strong>
-            <span>评论</span>
-          </div>
-        </div>
-      </section>
-
-      <section class="card side-card">
-        <h4>阅读信息</h4>
-        <ul class="info-list">
-          <li><span>发布</span><em>{{ formatDate(article.publishTime || article.createTime) }}</em></li>
-          <li><span>字数</span><em>{{ wordCount }}</em></li>
-          <li><span>预计</span><em>{{ readingMinutes }} 分钟</em></li>
-          <li v-if="article.updateTime"><span>更新</span><em>{{ formatDate(article.updateTime) }}</em></li>
-        </ul>
-      </section>
-
-      <section class="card side-card">
-        <h4>操作</h4>
-        <div class="action-col">
-          <button class="action-btn" type="button" :class="{ on: articleLiked }" @click="onLikeArticle">
-            {{ articleLiked ? '已赞' : '点赞' }} {{ article.likeCount }}
-          </button>
-          <button class="action-btn" type="button" @click="copyLink">
-            {{ copied ? '已复制链接' : '复制链接' }}
-          </button>
-          <button class="action-btn" type="button" @click="scrollToTop">回到顶部</button>
-        </div>
-      </section>
-
-      <section v-if="toc.length && tocPosition === 'left'" class="card side-card toc-card">
-        <h4>目录</h4>
-        <ul>
-          <li
-            v-for="item in toc"
-            :key="item.id"
-            :class="['level-' + item.level, { active: activeToc === item.id }]"
-            @click="scrollTo(item.id)"
-          >
-            {{ item.text }}
-          </li>
-        </ul>
-      </section>
+      <template v-for="m in leftMods" :key="m.key">
+        <AuthorCard
+          v-if="m.key === 'author'"
+          :author-name="article.authorName"
+          :author-avatar="article.authorAvatar"
+          :site-name="settingsStore.siteName"
+          :view-count="article.viewCount"
+          :like-count="article.likeCount"
+          :comment-count="article.commentCount"
+          :liked="articleLiked"
+        />
+        <ReadingInfoCard
+          v-else-if="m.key === 'readingInfo'"
+          :publish-time="article.publishTime"
+          :create-time="article.createTime"
+          :update-time="article.updateTime"
+          :word-count="wordCount"
+          :reading-minutes="readingMinutes"
+          :format-date="formatDate"
+        />
+        <ActionCard
+          v-else-if="m.key === 'actions'"
+          :like-count="article.likeCount"
+          :liked="articleLiked"
+          :copied="copied"
+          @like="onLikeArticle"
+          @copy="copyLink"
+          @top="scrollToTop"
+        />
+        <RelatedCard
+          v-else-if="m.key === 'related'"
+          :title="sideListTitle"
+          :items="sideArticles"
+          :current-id="article.id"
+          @open="openSideArticle"
+        />
+      </template>
     </aside>
 
     <div class="article-main card">
@@ -83,102 +64,31 @@
 
       <div
         ref="mdEl"
-        class="markdown-body"
+        class="markdown-body article-scroll-body"
         v-html="rendered"
       ></div>
 
       <footer class="article-foot muted">本文由 {{ article.authorName }} 发表于{{ settingsStore.siteName }}</footer>
 
       <!-- 评论区 -->
-      <section class="comments">
-        <h3>评论 <span class="muted">({{ comments.length }})</span></h3>
+      <CommentSection :article-id="article.id" />
 
-        <div class="comment-form card">
-          <textarea
-            v-model="commentContent"
-            rows="3"
-            maxlength="1000"
-            placeholder="写下你的评论…（审核通过后展示）"
-          ></textarea>
-          <div class="form-actions">
-            <span v-if="replyTo" class="reply-hint muted">
-              回复 @{{ replyTo.nickname }}
-              <button class="link-btn" type="button" @click="cancelReply">取消</button>
-            </span>
-            <button
-              class="submit-btn"
-              type="button"
-              :disabled="submitting || !commentContent.trim()"
-              @click="submitComment"
-            >
-              {{ submitting ? '提交中…' : '发表评论' }}
-            </button>
-          </div>
-          <p v-if="commentMsg" class="form-msg">{{ commentMsg }}</p>
-        </div>
-
-        <div v-if="comments.length" class="comment-list">
-          <article v-for="c in comments" :key="c.id" class="comment-item">
-            <div class="comment-head">
-              <strong>{{ c.nickname }}</strong>
-              <span class="muted">{{ formatDate(c.createTime) }}</span>
-            </div>
-            <p class="comment-body">{{ c.content }}</p>
-            <button class="link-btn" type="button" @click="startReply(c)">回复</button>
-            <div v-if="c.replies?.length" class="reply-list">
-              <div v-for="r in c.replies" :key="r.id" class="reply-item">
-                <div class="comment-head">
-                  <strong>{{ r.nickname }}</strong>
-                  <span class="muted">{{ formatDate(r.createTime) }}</span>
-                </div>
-                <p class="comment-body">{{ r.content }}</p>
-                <button class="link-btn" type="button" @click="startReply(c, r)">回复</button>
-              </div>
-            </div>
-          </article>
-        </div>
-        <p v-else class="muted empty-comments">还没有评论，来抢沙发吧。</p>
-      </section>
     </div>
 
     <aside class="article-side">
-      <section v-if="toc.length && tocPosition === 'right'" class="card side-card toc-card">
-        <h4>目录</h4>
-        <ul>
-          <li
-            v-for="item in toc"
-            :key="item.id"
-            :class="['level-' + item.level, { active: activeToc === item.id }]"
-            @click="scrollTo(item.id)"
-          >
-            {{ item.text }}
-          </li>
-        </ul>
-      </section>
-
-      <section class="card side-card">
-        <h4>相关阅读</h4>
-        <ol class="hot-list">
-          <li v-for="(h, i) in relatedArticles" :key="h.id" @click="goDetail(h)">
-            <em class="rank">{{ i + 1 }}</em>
-            <span class="hot-title">{{ h.title }}</span>
-          </li>
-          <li v-if="!relatedArticles.length" class="muted">暂无</li>
-        </ol>
-      </section>
-
-      <section class="card side-card">
-        <h4>标签</h4>
-        <div class="tags" v-if="article.tags?.length">
-          <span
-            v-for="t in article.tags"
-            :key="t.id"
-            class="pill"
-            @click="filterByTag(t.id)"
-          >{{ t.name }}</span>
-        </div>
-        <p v-else class="muted">暂无标签</p>
-      </section>
+      <template v-for="m in rightMods" :key="m.key">
+        <TocCard
+          v-if="m.key === 'toc' && toc.length"
+          :toc="toc"
+          :active-id="activeToc"
+          @jump="scrollTo"
+        />
+        <TagCard
+          v-else-if="m.key === 'tags'"
+          :tags="article.tags || []"
+          @filter="filterByTag"
+        />
+      </template>
     </aside>
   </div>
 
@@ -198,20 +108,43 @@ import 'highlight.js/styles/github.css'
 import mermaid from 'mermaid'
 import {
   getArticleDetail,
-  getArticleComments,
-  addComment,
   toggleLike,
   getHotArticles,
-  type ArticleItem,
-  type CommentItem
+  type ArticleItem
 } from '@/api/blog'
 import { formatDate } from '@/utils/date'
 import { useSettingsStore } from '@/stores/settings'
+import {
+  defaultArticleModules,
+  modulesByZone,
+  normalizeModules,
+  type LayoutModuleItem
+} from '@/config/layoutModules'
+import AuthorCard from '@/components/article/AuthorCard.vue'
+import ReadingInfoCard from '@/components/article/ReadingInfoCard.vue'
+import ActionCard from '@/components/article/ActionCard.vue'
+import RelatedCard from '@/components/article/RelatedCard.vue'
+import TocCard from '@/components/article/TocCard.vue'
+import TagCard from '@/components/article/TagCard.vue'
+import CommentSection from '@/components/article/CommentSection.vue'
 
 const route = useRoute()
 const router = useRouter()
 const settingsStore = useSettingsStore()
-const tocPosition = computed(() => settingsStore.tocPosition)
+
+/** 详情侧栏编排（固定图二默认，后台可改） */
+const articleModules = computed<LayoutModuleItem[]>(() =>
+  normalizeModules(settingsStore.siteSetting?.articleLayout, defaultArticleModules(), [
+    { key: 'author', label: '作者卡片', zones: ['left'], hideable: true },
+    { key: 'readingInfo', label: '阅读信息', zones: ['left'], hideable: true },
+    { key: 'actions', label: '操作', zones: ['left'], hideable: true },
+    { key: 'related', label: '相关阅读/合集', zones: ['left', 'right'], hideable: true },
+    { key: 'toc', label: '目录', zones: ['right'], hideable: true },
+    { key: 'tags', label: '标签', zones: ['right'], hideable: true }
+  ])
+)
+const leftMods = computed(() => modulesByZone(articleModules.value, 'left'))
+const rightMods = computed(() => modulesByZone(articleModules.value, 'right'))
 
 const article = ref<ArticleItem | null>(null)
 const rendered = ref('')
@@ -220,14 +153,25 @@ const mdEl = ref<HTMLElement | null>(null)
 const toc = ref<{ id: string; text: string; level: number }[]>([])
 const activeToc = ref('')
 
-const comments = ref<CommentItem[]>([])
-const commentContent = ref('')
-const commentMsg = ref('')
-const submitting = ref(false)
-const replyTo = ref<{ parentId: string | number; rootId?: string | number; nickname: string } | null>(null)
 const articleLiked = ref(false)
 const relatedArticles = ref<ArticleItem[]>([])
+
+/** 左侧：有合集展示合集文章，否则相关阅读（后期可换算法） */
+const sideListTitle = computed(() => {
+  const name = article.value?.collection?.name
+  return name ? `合集 · ${name}` : '相关阅读'
+})
+
+const sideArticles = computed(() => {
+  const colArticles = article.value?.collectionArticles
+  if (article.value?.collectionId && Array.isArray(colArticles)) {
+    return colArticles
+  }
+  return relatedArticles.value
+})
 const copied = ref(false)
+/** 合集内切换：淡出旧文 → 加载 → 淡入 */
+const switching = ref(false)
 
 const wordCount = computed(() => {
   const raw = article.value?.content || ''
@@ -253,14 +197,24 @@ function copyLink() {
 }
 
 function scrollToTop() {
-  window.scrollTo({ top: 0, behavior: 'smooth' })
+  const main = document.querySelector('.article-main') as HTMLElement | null
+  main?.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-function goDetail(a: ArticleItem) {
-  router.push(`/article/${a.id}`)
+/** 合集/相关阅读：同页就地切换，带淡入淡出 */
+function openSideArticle(id: string | number) {
+  const current = article.value?.id
+  if (current != null && String(current) === String(id)) return
+  switching.value = true
+  router.push(`/article/${id}`)
 }
 
 async function loadRelated() {
+  // 有合集时侧栏用详情返回的合集文章（含当前篇），无需再拉热门
+  if (article.value?.collectionId && article.value?.collectionArticles?.length) {
+    relatedArticles.value = []
+    return
+  }
   try {
     const hot = await getHotArticles(6)
     const id = article.value?.id
@@ -286,55 +240,8 @@ async function onLikeArticle() {
     const res = await toggleLike(1, article.value.id)
     articleLiked.value = res.liked
     article.value.likeCount = res.likeCount
-  } catch (e) {
-    commentMsg.value = e instanceof Error ? e.message : '点赞失败，请登录后重试'
-  }
-}
-
-async function loadComments() {
-  if (!route.params.id) return
-  try {
-    comments.value = await getArticleComments(route.params.id as string)
   } catch {
-    comments.value = []
-  }
-}
-
-function startReply(root: CommentItem, reply?: CommentItem) {
-  if (reply) {
-    replyTo.value = {
-      parentId: reply.id,
-      rootId: reply.rootId || root.id,
-      nickname: reply.nickname
-    }
-  } else {
-    replyTo.value = { parentId: root.id, rootId: root.id, nickname: root.nickname }
-  }
-}
-
-function cancelReply() {
-  replyTo.value = null
-}
-
-async function submitComment() {
-  const content = commentContent.value.trim()
-  if (!content || !article.value) return
-  submitting.value = true
-  commentMsg.value = ''
-  try {
-    await addComment({
-      articleId: article.value.id,
-      content,
-      parentId: replyTo.value?.parentId,
-      rootId: replyTo.value?.rootId
-    })
-    commentContent.value = ''
-    replyTo.value = null
-    commentMsg.value = '评论已提交，审核通过后展示。'
-  } catch (e) {
-    commentMsg.value = e instanceof Error ? e.message : '评论失败，请登录后重试'
-  } finally {
-    submitting.value = false
+    // 登录失效时 request 层已有统一提示
   }
 }
 
@@ -430,22 +337,28 @@ async function renderMermaid() {
 
 function scrollTo(id: string) {
   activeToc.value = id
-  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const el = document.getElementById(id)
+  const main = document.querySelector('.article-main') as HTMLElement | null
+  if (!el || !main) return
+  const top = el.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop - 16
+  main.scrollTo({ top, behavior: 'smooth' })
 }
 
-/** 滚动时同步目录高亮（sticky 顶栏偏移约 88px） */
+/** 目录高亮：监听正文容器滚动（仅正文滚动） */
 let tocSpyRaf = 0
 
 function updateActiveToc() {
   tocSpyRaf = 0
   const items = toc.value
   if (!items.length) return
-  const offset = 100
+  const main = document.querySelector('.article-main') as HTMLElement | null
+  if (!main) return
+  const offset = 24
   let current = items[0].id
   for (const item of items) {
     const el = document.getElementById(item.id)
     if (!el) continue
-    const top = el.getBoundingClientRect().top
+    const top = el.getBoundingClientRect().top - main.getBoundingClientRect().top
     if (top - offset <= 0) {
       current = item.id
     } else {
@@ -461,12 +374,14 @@ function onTocSpyScroll() {
 }
 
 function bindTocSpy() {
-  window.addEventListener('scroll', onTocSpyScroll, { passive: true })
+  const main = document.querySelector('.article-main')
+  main?.addEventListener('scroll', onTocSpyScroll, { passive: true })
   updateActiveToc()
 }
 
 function unbindTocSpy() {
-  window.removeEventListener('scroll', onTocSpyScroll)
+  const main = document.querySelector('.article-main')
+  main?.removeEventListener('scroll', onTocSpyScroll)
   if (tocSpyRaf) {
     window.cancelAnimationFrame(tocSpyRaf)
     tocSpyRaf = 0
@@ -478,14 +393,24 @@ function filterByTag(id: string | number) {
 }
 
 async function load() {
+  const isSwitch = switching.value
+  // 切换时保留旧文节点做淡出，避免闪白；首屏仍清空
+  if (!isSwitch) {
+    article.value = null
+    rendered.value = ''
+    toc.value = []
+  }
   error.value = ''
-  article.value = null
-  rendered.value = ''
-  toc.value = []
   activeToc.value = ''
+  articleLiked.value = false
+  relatedArticles.value = []
   try {
     const id = route.params.id as string
     const data = await getArticleDetail(id)
+    if (isSwitch) {
+      // 短暂保持淡出态再换内容
+      await new Promise(r => setTimeout(r, 120))
+    }
     article.value = data
     rendered.value = marked.parse(data.content || '') as string
     document.title = `${data.title} · ${settingsStore.siteName}`
@@ -496,18 +421,24 @@ async function load() {
     wrapTables()
     highlightCode()
     await renderMermaid()
-    await loadComments()
     await loadRelated()
     await nextTick()
     updateActiveToc()
+    const main = document.querySelector('.article-main') as HTMLElement | null
+    main?.scrollTo({ top: 0 })
+    // 淡入
+    await nextTick()
+    switching.value = false
   } catch (e) {
     error.value = e instanceof Error ? e.message : '文章加载失败'
+    switching.value = false
   }
 }
 
 onMounted(() => {
   load()
-  bindTocSpy()
+  // 等 DOM 挂载后再绑正文滚动
+  requestAnimationFrame(() => bindTocSpy())
 })
 
 onBeforeUnmount(() => {
@@ -526,14 +457,14 @@ watch(
 
 <style scoped>
 /* ---------- layout shell ----------
-   3-col: [left author/meta | article | right toc/related]
-   Left edge stays in .container, aligned with the site title.
-   toc-left moves TOC under the left rail; toc-right keeps it on the right.
+   仅中间正文滚动；左右栏与 header 固定。
+   固定图二：左=作者/阅读/操作/相关，右=目录/标签。
 */
 .article-page {
   --left-w: 200px;
   --side-w: 240px;
   --gap: 20px;
+  --header-h: 72px;
 
   display: grid;
   grid-template-columns: var(--left-w) minmax(0, 1fr) var(--side-w);
@@ -541,6 +472,22 @@ watch(
   justify-content: start;
   align-items: start;
   width: 100%;
+  height: calc(100vh - var(--header-h));
+  overflow: hidden;
+}
+
+/* 合集切换：整体轻微淡出，避免闪白 */
+.article-page.switching .article-main,
+.article-page.switching .article-left,
+.article-page.switching .article-side {
+  opacity: 0.35;
+  transition: opacity 0.18s ease;
+}
+
+.article-page .article-main,
+.article-page .article-left,
+.article-page .article-side {
+  transition: opacity 0.22s ease;
 }
 
 .article-left,
@@ -548,8 +495,11 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 16px;
-  position: sticky;
-  top: 84px;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 8px;
+  scrollbar-width: thin;
 }
 
 .article-page .article-main {
@@ -558,6 +508,10 @@ watch(
   min-width: 0;
   width: 100%;
   max-width: none;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 
 .article-left {
@@ -571,11 +525,12 @@ watch(
 }
 
 .article-main {
-  padding: 40px 48px;
+  padding: 28px 36px 48px;
 }
 
 .side-card {
   padding: 16px;
+  flex-shrink: 0;
 }
 
 .side-card h4 {
@@ -734,6 +689,16 @@ watch(
 
 .hot-list li:hover .hot-title {
   color: var(--accent);
+}
+
+.hot-list li.current {
+  background: var(--accent-soft);
+  border-radius: 6px;
+}
+
+.hot-list li.current .hot-title {
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .rank {
@@ -905,121 +870,6 @@ watch(
   font-size: 13px;
 }
 
-.comments {
-  margin-top: 36px;
-  padding-top: 24px;
-  border-top: 1px solid var(--border);
-}
-
-.comments h3 {
-  margin: 0 0 16px;
-  font-size: 18px;
-}
-
-.comment-form {
-  padding: 14px 16px;
-  margin-bottom: 20px;
-}
-
-.comment-form textarea {
-  width: 100%;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
-  font-size: 14px;
-  font-family: inherit;
-  resize: vertical;
-  background: var(--card);
-  color: var(--ink);
-  box-sizing: border-box;
-}
-
-.comment-form textarea:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.form-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 10px;
-  gap: 12px;
-}
-
-.form-msg {
-  margin: 8px 0 0;
-  font-size: 13px;
-  color: var(--accent);
-}
-
-.submit-btn {
-  border: none;
-  background: var(--accent);
-  color: #fff;
-  border-radius: 8px;
-  padding: 8px 18px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.submit-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.link-btn {
-  border: none;
-  background: transparent;
-  color: var(--accent);
-  font-size: 12px;
-  cursor: pointer;
-  padding: 0;
-}
-
-.comment-item {
-  padding: 14px 0;
-  border-bottom: 1px dashed var(--border);
-}
-
-.comment-head {
-  display: flex;
-  gap: 12px;
-  align-items: baseline;
-  margin-bottom: 6px;
-}
-
-.comment-body {
-  margin: 0 0 8px;
-  font-size: 14px;
-  line-height: 1.7;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.reply-list {
-  margin: 10px 0 0 28px;
-  padding-left: 14px;
-  border-left: 2px solid var(--border);
-}
-
-.reply-item {
-  padding: 10px 0;
-}
-
-.empty-comments {
-  padding: 24px 0;
-  text-align: center;
-}
-
-.reply-hint {
-  font-size: 12px;
-}
-
-.reply-hint .link-btn {
-  margin-left: 8px;
-}
-
 /* TOC card scrolls when long */
 .toc-card {
   max-height: calc(100vh - 110px);
@@ -1049,30 +899,44 @@ watch(
   }
 }
 
-/* tablet: left rail becomes a top strip, keep article + right rail */
-@media (min-width: 900px) and (max-width: 1099px) {
+/* tablet / mobile: stack; body page scroll restored */
+@media (max-width: 1099px) {
   .article-page {
-    grid-template-columns: minmax(0, 1fr) var(--side-w);
+    height: auto;
+    overflow: visible;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .article-left,
+  .article-side {
+    height: auto;
+    overflow: visible;
+    position: static;
+  }
+
+  .article-page .article-main {
+    height: auto;
+    overflow: visible;
+    order: 0;
   }
 
   .article-left {
-    grid-column: 1 / -1;
-    grid-row: 1;
-    position: static;
+    order: -1;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 12px;
   }
 
-  .article-main {
-    grid-column: 1;
-    grid-row: 2;
-    max-width: none;
+  .site-main.main-article {
+    height: auto;
+    overflow: visible;
+    min-height: calc(100vh - 72px);
   }
 
-  .article-side {
-    grid-column: 2;
-    grid-row: 2;
+  .container-article {
+    height: auto;
   }
 }
 

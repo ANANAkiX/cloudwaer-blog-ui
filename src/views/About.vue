@@ -1,42 +1,39 @@
 <template>
   <div class="about-page">
-    <section class="card hero">
+    <el-card class="hero" shadow="never">
       <h1>{{ aboutTitle }}</h1>
       <p class="lead">{{ aboutContent }}</p>
-    </section>
+    </el-card>
 
     <div class="about-grid">
-      <section class="card block">
-        <h2>本站能做什么</h2>
+      <el-card class="block" shadow="never">
+        <template #header><span>本站能做什么</span></template>
         <ul>
           <li>多作者入驻：访客申请成为博客主，独立撰写与管理文章</li>
           <li>Markdown 写作：代码高亮、目录导航、分类标签筛选</li>
           <li>互动：评论审核、点赞、热度排序、微论坛短帖</li>
           <li>管理后台：文章 / 评论 / 论坛 / 权限一体化（Cloudwaer Admin）</li>
         </ul>
-      </section>
+      </el-card>
 
       <div class="about-side">
-        <section class="card block">
-          <h2>技术栈</h2>
+        <el-card class="block" shadow="never">
+          <template #header><span>技术栈</span></template>
           <div class="stack">
-            <span class="pill">Spring Boot 3</span>
-            <span class="pill">Spring Cloud</span>
-            <span class="pill">MyBatis-Plus</span>
-            <span class="pill">Vue 3</span>
-            <span class="pill">Vite</span>
-            <span class="pill">Element Plus</span>
+            <el-tag v-for="s in ['Spring Boot 3','Spring Cloud','MyBatis-Plus','Vue 3','Vite','Element Plus']" :key="s" size="small" effect="plain">
+              {{ s }}
+            </el-tag>
           </div>
-        </section>
+        </el-card>
 
-        <section class="card block">
-          <h2>友链</h2>
+        <el-card class="block" shadow="never">
+          <template #header><span>友链</span></template>
           <p class="muted">欢迎同类技术博客互换友链，可先在微论坛留言。</p>
           <ul>
             <li><a href="https://spring.io" target="_blank" rel="noopener">Spring</a> — 官方文档</li>
             <li><a href="https://vuejs.org" target="_blank" rel="noopener">Vue.js</a> — 渐进式前端框架</li>
           </ul>
-        </section>
+        </el-card>
       </div>
     </div>
   </div>
@@ -45,6 +42,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
+import { ElCard, ElTag } from 'element-plus'
 
 const settingsStore = useSettingsStore()
 

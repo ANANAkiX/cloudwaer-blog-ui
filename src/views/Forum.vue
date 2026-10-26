@@ -1,21 +1,26 @@
 <template>
   <div class="forum-page">
-    <div class="page-head card">
-      <h2>微论坛</h2>
-      <p class="muted">短帖交流 · 登录后可发帖回复 · 管理员可置顶/加精</p>
-    </div>
+    <el-card class="page-head" shadow="never">
+      <template #header>
+        <div class="head-row">
+          <span>微论坛</span>
+          <span class="muted tip">短帖交流 · 登录后可发帖回复 · 管理员可置顶/加精</span>
+        </div>
+      </template>
+    </el-card>
 
     <div v-if="topics.length" class="topic-list">
-      <article
+      <el-card
         v-for="t in topics"
         :key="t.id"
-        class="topic-card card"
+        class="topic-card"
+        shadow="never"
         @click="goDetail(t)"
       >
         <div class="topic-main">
           <h3>
-            <span v-if="t.isTop === 1" class="badge top">置顶</span>
-            <span v-if="t.isEssence === 1" class="badge essence">精华</span>
+            <el-tag v-if="t.isTop === 1" size="small" type="danger">置顶</el-tag>
+            <el-tag v-if="t.isEssence === 1" size="small" type="warning">精华</el-tag>
             {{ t.title }}
           </h3>
           <div class="meta">
@@ -26,14 +31,18 @@
             <span>{{ formatDate(t.lastReplyTime || t.createTime) }}</span>
           </div>
         </div>
-      </article>
+      </el-card>
     </div>
-    <div v-else class="empty card">暂无话题</div>
+    <el-empty v-else description="暂无话题" :image-size="100" />
 
     <div v-if="pages > 1" class="pager">
-      <button :disabled="current <= 1" @click="goPage(current - 1)">上一页</button>
-      <span class="pager-info">{{ current }} / {{ pages }}</span>
-      <button :disabled="current >= pages" @click="goPage(current + 1)">下一页</button>
+      <el-pagination
+        layout="prev, pager, next"
+        :total="pages * 10"
+        :current-page="current"
+        :page-size="10"
+        @current-change="goPage"
+      />
     </div>
   </div>
 </template>
@@ -43,6 +52,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getTopicList, type TopicItem } from '@/api/blog'
 import { formatDate } from '@/utils/date'
+import { ElCard, ElTag, ElEmpty, ElPagination } from 'element-plus'
 
 const route = useRoute()
 const router = useRouter()
@@ -76,100 +86,57 @@ watch(() => route.query, load)
 </script>
 
 <style scoped>
-.page-head {
-  padding: 20px 24px;
-  margin-bottom: 16px;
+.page-head :deep(.el-card__body) {
+  padding: 0;
 }
-
-.page-head h2 {
-  margin: 0 0 6px;
-  font-size: 22px;
-}
-
-.page-head p {
-  margin: 0;
-  font-size: 13px;
-}
-
-.topic-card {
+.head-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
   padding: 16px 20px;
-  margin-bottom: 12px;
+}
+.tip {
+  font-size: 13px;
+  font-weight: 400;
+}
+.topic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+.topic-card {
   cursor: pointer;
-  transition: box-shadow 0.15s ease;
+  transition: border-color 0.15s ease;
 }
-
 .topic-card:hover {
-  box-shadow: 0 6px 24px rgba(35, 38, 43, 0.06);
+  border-color: var(--accent);
 }
-
-.topic-main h3 {
-  margin: 0 0 8px;
-  font-size: 17px;
-  line-height: 1.4;
+.topic-card h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--ink);
 }
-
-.badge {
-  display: inline-block;
-  font-size: 12px;
-  padding: 1px 8px;
-  border-radius: 4px;
-  margin-right: 8px;
-  vertical-align: 2px;
-}
-
-.badge.top {
-  background: #fff1f0;
-  color: #cf1322;
-}
-
-.badge.essence {
-  background: #fff7e6;
-  color: #d46b08;
-}
-
 .meta {
   display: flex;
   gap: 14px;
   flex-wrap: wrap;
-  color: #9ca3af;
-  font-size: 12px;
-}
-
-.pager {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  margin-top: 8px;
-}
-
-.pager button {
-  border: 1px solid var(--border);
-  background: var(--card);
-  color: var(--ink);
-  border-radius: 8px;
-  padding: 8px 18px;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.pager button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.pager-info {
   color: var(--muted);
   font-size: 13px;
 }
-
-.empty {
-  padding: 48px 24px;
-  text-align: center;
-  color: var(--muted);
+.pager {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
 }
-
 .muted {
-  color: #9ca3af;
+  color: var(--muted);
 }
 </style>

@@ -1,85 +1,106 @@
 <template>
   <div class="blog-layout">
-    <ReadingProgress />
+    <ReadingProgress/>
     <header class="site-header">
       <div class="container header-inner">
         <router-link to="/" class="logo">{{ siteName }}</router-link>
         <nav class="nav">
-          <router-link v-for="item in mainNavItems" :key="item.key || item.path" :to="item.path">
+          <router-link v-for="item in mainNavItems" :key="item.key || item.path" :to="item.path || '/'">
             {{ navLabel(item) }}
           </router-link>
         </nav>
         <div class="header-actions">
-          <div v-if="searchEnabled" class="search-box" role="search">
-            <input
+          <el-input
+              v-if="searchEnabled"
               v-model="searchKeyword"
+              class="search-input"
               type="search"
+              clearable
               :placeholder="t('searchPlaceholder')"
               @keyup.enter="onSearch"
-            />
-          </div>
+              @clear="onSearch"
+          >
+            <template #prefix>
+              <el-icon>
+                <Search/>
+              </el-icon>
+            </template>
+          </el-input>
 
-          <button type="button" class="write-btn" @click="goWrite">写文章</button>
+          <el-button type="primary" round class="write-btn" @click="goWrite">写文章</el-button>
 
-          <div class="user-area">
-            <div class="user-anchor">
+          <el-popover
+              placement="bottom"
+              :width="140"
+              trigger="hover"
+              popper-class="user-popover"
+              :show-arrow="false"
+              :offset="8"
+          >
+            <template #reference>
               <button
-                type="button"
-                class="avatar-btn"
-                :title="isLoggedIn ? username || '个人中心' : '登录'"
-                @click="goUser"
+                  type="button"
+                  class="avatar-btn"
+                  :title="isLoggedIn ? username || '个人中心' : '登录'"
               >
-                <span class="avatar-text">{{ avatarChar }}</span>
+                <img v-if="isLoggedIn && avatarUrl" :src="avatarUrl" alt="avatar" class="avatar-img"/>
+                <span v-else class="avatar-text">{{ avatarChar }}</span>
               </button>
-              <div class="user-menu" role="menu">
-                <button type="button" class="menu-item" role="menuitem" @click="openSettings">
-                  设置
-                </button>
-                <button type="button" class="menu-item" role="menuitem" @click="goProfile">
-                  个人中心
-                </button>
-                <template v-if="isLoggedIn">
-                  <button type="button" class="menu-item danger" role="menuitem" @click="onLogout">
-                    退出登录
-                  </button>
-                </template>
-                <template v-else>
-                  <button type="button" class="menu-item" role="menuitem" @click="goLogin">
-                    登录
-                  </button>
-                </template>
-              </div>
+            </template>
+            <div class="user-menu" role="menu">
+              <button type="button" class="menu-item" role="menuitem" @click="openSettings">
+                设置
+              </button>
+              <button type="button" class="menu-item" role="menuitem" @click="goProfile">
+                个人中心
+              </button>
+              <button v-if="isLoggedIn" type="button" class="menu-item danger" role="menuitem" @click="onLogout">
+                退出登录
+              </button>
+              <button v-else type="button" class="menu-item" role="menuitem" @click="goLogin">
+                登录
+              </button>
             </div>
-          </div>
+          </el-popover>
         </div>
       </div>
     </header>
 
-    <main class="site-main container">
-      <router-view />
+    <main class="site-main" :class="{ 'main-article': isArticleRoute }">
+      <div class="container" :class="{ 'container-article': isArticleRoute }">
+        <router-view v-slot="{ Component, route }">
+          <Transition name="page" mode="out-in">
+            <component :is="Component" :key="route.path"/>
+          </Transition>
+        </router-view>
+      </div>
     </main>
 
-    <footer class="site-footer">
+    <footer v-if="!isArticleRoute" class="site-footer">
       <div class="container">{{ footerText }}</div>
     </footer>
 
-    <SettingsPanel v-model="settingsOpen" />
+    <SettingsPanel v-model="settingsOpen"/>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import {computed, onMounted, ref} from 'vue'
+import {useRoute, useRouter} from 'vue-router'
+import {Search} from '@element-plus/icons-vue'
 import ReadingProgress from '@/components/ReadingProgress.vue'
 import SettingsPanel from '@/components/SettingsPanel.vue'
-import { useSettingsStore } from '@/stores/settings'
-import { getToken, getUsername, clearToken } from '@/stores/auth'
-import { message } from '@/api/request'
-import type { NavSettingItem } from '@/api/blog'
+import {useSettingsStore} from '@/stores/settings'
+import {getToken, getUsername, getAvatar, setAvatar, clearToken} from '@/stores/auth'
+import {ElMessage} from 'element-plus'
+import type {NavSettingItem} from '@/api/blog'
+import {getMyProfile} from '@/api/blog'
 
+const route = useRoute()
 const router = useRouter()
 const store = useSettingsStore()
 const t = (k: string) => store.t(k)
+const isArticleRoute = computed(() => route.name === 'article')
 const siteName = computed(() => store.siteName)
 const footerText = computed(() => store.footerText)
 const searchEnabled = computed(() => store.searchEnabled)
@@ -89,6 +110,7 @@ const settingsOpen = ref(false)
 
 const isLoggedIn = computed(() => !!getToken())
 const username = computed(() => getUsername())
+const avatarUrl = computed(() => getAvatar())
 const avatarChar = computed(() => {
   if (!isLoggedIn.value) return '登'
   const name = username.value || '我'
@@ -97,11 +119,11 @@ const avatarChar = computed(() => {
 
 /** 左侧导航去掉「写文章」，入口改到搜索与用户区之间 */
 const mainNavItems = computed(() =>
-  navItems.value.filter(item => {
-    const path = (item.path || '').toLowerCase()
-    const key = (item.key || '').toLowerCase()
-    return path !== '/write' && key !== 'write'
-  })
+    navItems.value.filter(item => {
+      const path = (item.path || '').toLowerCase()
+      const key = (item.key || '').toLowerCase()
+      return path !== '/write' && key !== 'write'
+    })
 )
 
 function navLabel(item: NavSettingItem): string {
@@ -111,7 +133,7 @@ function navLabel(item: NavSettingItem): string {
 
 function onSearch() {
   const kw = searchKeyword.value.trim()
-  router.push({ path: '/', query: kw ? { keyword: kw } : {} })
+  router.push({path: '/', query: kw ? {keyword: kw} : {}})
 }
 
 function goWrite() {
@@ -131,7 +153,7 @@ function goProfile() {
     router.push('/login')
     return
   }
-  router.push('/')
+  router.push('/profile')
 }
 
 function goLogin() {
@@ -142,9 +164,20 @@ function openSettings() {
   settingsOpen.value = true
 }
 
+onMounted(async () => {
+  if (isLoggedIn.value && !avatarUrl.value) {
+    try {
+      const p = await getMyProfile()
+      if (p.avatar) setAvatar(p.avatar)
+    } catch {
+      /* ignore */
+    }
+  }
+})
+
 function onLogout() {
   clearToken()
-  message.success('已退出登录')
+  ElMessage.success('已退出登录')
   router.push('/')
 }
 </script>
@@ -191,7 +224,14 @@ function onLogout() {
   color: var(--ink);
 }
 
-.nav a.router-link-active {
+/* 首页 href="/" 会因前缀匹配在所有页 active，故首页只认 exact */
+.nav a[href='/'].router-link-exact-active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* 其余项（含 /forum 子路由）用 active */
+.nav a:not([href='/']).router-link-active {
   color: var(--accent);
   font-weight: 600;
 }
@@ -202,61 +242,19 @@ function onLogout() {
   gap: 12px;
 }
 
-.search-box input {
-  width: 220px;
-  height: 40px;
-  padding: 0 16px;
-  border: 1px solid var(--border);
+.search-input {
+  width: 200px;
+}
+
+.search-input :deep(.el-input__wrapper) {
   border-radius: 20px;
+  padding-left: 10px;
+  box-shadow: 0 0 0 1px var(--border) inset;
   background: var(--card);
-  color: var(--ink);
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.15s ease;
-}
-
-.search-box input:focus {
-  border-color: var(--accent);
-}
-
-.search-box input::placeholder {
-  color: var(--muted);
 }
 
 .write-btn {
-  height: 40px;
-  padding: 0 18px;
-  border-radius: 20px;
-  border: 1px solid var(--accent);
-  background: var(--accent);
-  color: #fff;
-  font-size: 14px;
   font-weight: 500;
-  cursor: pointer;
-  transition: opacity 0.15s ease;
-  white-space: nowrap;
-}
-
-.write-btn:hover {
-  opacity: 0.9;
-}
-
-.user-area {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  height: 40px;
-  /* 扩大命中区，鼠标从头像移到下方菜单时不丢 hover */
-  padding: 12px 24px 140px 24px;
-  margin: -12px -24px -140px -24px;
-}
-
-/* 仅包住头像，菜单相对头像水平居中 */
-.user-anchor {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  z-index: 2;
 }
 
 .avatar-btn {
@@ -273,8 +271,8 @@ function onLogout() {
   align-items: center;
   justify-content: center;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
-  position: relative;
-  z-index: 2;
+  margin-left: 4px;
+  flex-shrink: 0;
 }
 
 .avatar-btn:hover {
@@ -282,45 +280,32 @@ function onLogout() {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
-/* 用户下拉：头像正下方居中（设置 / 个人中心 / 退出） */
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
 .user-menu {
-  position: absolute;
-  top: calc(100% + 10px);
-  left: 50%;
-  transform: translateX(-50%);
-  min-width: 132px;
-  padding: 6px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(35, 38, 43, 0.12);
   display: flex;
   flex-direction: column;
   gap: 2px;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transition: opacity 0.12s ease;
-  z-index: 30;
-}
-
-.user-area:hover .user-menu,
-.user-area:focus-within .user-menu {
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
+  padding: 4px;
 }
 
 .menu-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
-  text-align: left;
+  text-align: center;
   border: none;
   background: transparent;
   color: var(--ink);
   font-size: 13px;
-  padding: 9px 12px;
-  border-radius: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -331,7 +316,12 @@ function onLogout() {
 }
 
 .menu-item.danger {
-  color: #d93025;
+  color: #e5534b;
+}
+
+.menu-item.danger:hover {
+  background: rgb(229 83 75 / 12%);
+  color: #e5534b;
 }
 
 .menu-item.danger:hover {
@@ -362,6 +352,20 @@ function onLogout() {
   min-height: calc(100vh - 72px - 56px);
   padding-top: 28px;
   padding-bottom: 40px;
+}
+
+.site-main.main-article {
+  min-height: 0;
+  height: calc(100vh - 72px);
+  padding-top: 0;
+  padding-bottom: 0;
+  overflow: hidden;
+}
+
+.container-article {
+  height: 100%;
+  padding-top: 12px;
+  padding-bottom: 0;
 }
 
 .site-footer {
@@ -406,9 +410,17 @@ function onLogout() {
     height: 34px;
     font-size: 13px;
   }
+}
+</style>
 
-  .user-menu {
-    min-width: 120px;
-  }
+<style>
+/* el-popover 挂 body，需全局样式（非 scoped） */
+.user-popover.el-popover.el-popper {
+  padding: 6px !important;
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 8px 24px rgba(35, 38, 43, 0.12) !important;
+  color: var(--ink);
 }
 </style>

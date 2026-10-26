@@ -1,12 +1,18 @@
 <template>
   <div class="archive-page">
-    <div class="page-head card">
-      <h2>归档</h2>
-      <p class="muted">共 {{ total }} 篇已发布文章</p>
-    </div>
+    <el-card class="page-head" shadow="never">
+      <template #header>
+        <div class="head-row">
+          <span>归档</span>
+          <span class="muted">共 {{ total }} 篇已发布文章</span>
+        </div>
+      </template>
+    </el-card>
 
-    <div v-for="group in groups" :key="group.month" class="month-block card">
-      <h3 class="month-title">{{ group.month }} <span class="muted">({{ group.items.length }})</span></h3>
+    <el-card v-for="group in groups" :key="group.month" class="month-block" shadow="never">
+      <template #header>
+        <h3 class="month-title">{{ group.month }} <span class="muted">({{ group.items.length }})</span></h3>
+      </template>
       <ul class="archive-list">
         <li v-for="a in group.items" :key="a.id" @click="goDetail(a)">
           <span class="date muted">{{ formatDay(a.publishTime || a.createTime) }}</span>
@@ -14,9 +20,9 @@
           <span class="muted meta">{{ a.viewCount }} 阅读</span>
         </li>
       </ul>
-    </div>
+    </el-card>
 
-    <div v-if="!groups.length" class="empty card">暂无归档文章</div>
+    <el-empty v-if="!groups.length" description="暂无归档文章" :image-size="100" />
   </div>
 </template>
 
@@ -24,6 +30,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { getArticleArchive, type ArticleItem } from '@/api/blog'
+import { ElCard, ElEmpty } from 'element-plus'
 
 const router = useRouter()
 const articles = ref<ArticleItem[]>([])

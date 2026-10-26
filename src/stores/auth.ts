@@ -2,6 +2,7 @@ import { ref } from 'vue'
 
 const token = ref(localStorage.getItem('blog_token') || '')
 const username = ref(localStorage.getItem('blog_username') || '')
+const avatar = ref(localStorage.getItem('blog_avatar') || '')
 
 export function setToken(t: string, name?: string) {
   token.value = t
@@ -14,7 +15,9 @@ export function setToken(t: string, name?: string) {
   } else {
     localStorage.removeItem('blog_token')
     localStorage.removeItem('blog_username')
+    localStorage.removeItem('blog_avatar')
     username.value = ''
+    avatar.value = ''
   }
 }
 
@@ -24,6 +27,19 @@ export function getToken() {
 
 export function getUsername() {
   return username.value
+}
+
+export function getAvatar() {
+  return avatar.value
+}
+
+export function setAvatar(url: string) {
+  avatar.value = url || ''
+  if (url) {
+    localStorage.setItem('blog_avatar', url)
+  } else {
+    localStorage.removeItem('blog_avatar')
+  }
 }
 
 export function clearToken() {
