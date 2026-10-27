@@ -415,13 +415,13 @@ onBeforeUnmount(() => {
     <!-- 顶栏：标题 + 次要操作（发布在右栏） -->
     <el-card class="page-head" shadow="never">
       <div class="head-main">
-        <button type="button" class="back-link" @click="router.push(isEditing ? '/profile?tab=articles' : '/')">
+        <el-button type="text" class="back-link" @click="router.push(isEditing ? '/profile?tab=articles' : '/')">
           ← 返回
-        </button>
+        </el-button>
         <div>
           <h2>{{ isEditing ? '编辑文章' : '写文章' }}</h2>
           <p class="muted">
-            {{ loadingArticle ? '正在载入文章…' : '左侧编辑 · 右侧发布设置 · 预览为悬浮层' }}
+            {{ loadingArticle ? '正在载入文章…' : '左侧编辑 · 右侧发布设置 ' }}
           </p>
         </div>
       </div>
@@ -703,7 +703,8 @@ onBeforeUnmount(() => {
 
 .head-main {
   display: flex;
-  align-items: flex-start;
+  /* 返回按钮相对「标题+副标题」整块垂直居中，而不是顶对齐再手工偏移 */
+  align-items: center;
   gap: 14px;
 }
 
@@ -713,8 +714,8 @@ onBeforeUnmount(() => {
   color: var(--muted);
   font-size: 13px;
   cursor: pointer;
-  padding: 4px 0;
-  margin-top: 4px;
+  padding: 6px 8px;
+  flex-shrink: 0;
 }
 
 .back-link:hover {

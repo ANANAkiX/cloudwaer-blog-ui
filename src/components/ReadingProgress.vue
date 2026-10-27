@@ -16,6 +16,7 @@ const percent = ref(0)
 
 let boundTarget: HTMLElement | null = null
 let retryTimer: number | null = null
+let aliveTimer: number | null = null
 let observer: MutationObserver | null = null
 
 function scrollTarget(): HTMLElement | null {
@@ -43,6 +44,30 @@ function unbind() {
     window.clearTimeout(retryTimer)
     retryTimer = null
   }
+  if (aliveTimer != null) {
+    window.clearInterval(aliveTimer)
+    aliveTimer = null
+  }
+}
+
+/**
+ * 切换文章（含合集内跳转）时，Transition out-in 会让路由变化后的首帧
+ * 仍存在旧 .article-main —— 那次 bind 会绑到即将销毁的旧节点。
+ * 这里持续校验滚动容器身份，节点换了就重绑并重算进度。
+ */
+function ensureAlive() {
+  if (route.name !== 'article') return
+  const target = scrollTarget()
+  if (target && target !== boundTarget) {
+    bind()
+  }
+}
+
+function startAliveWatch() {
+  if (aliveTimer != null) {
+    window.clearInterval(aliveTimer)
+  }
+  aliveTimer = window.setInterval(ensureAlive, 300)
 }
 
 function bind() {
@@ -59,6 +84,7 @@ function bind() {
     }
     boundTarget = target
     target.addEventListener('scroll', calc, { passive: true })
+    startAliveWatch()
     calc()
     return
   }
