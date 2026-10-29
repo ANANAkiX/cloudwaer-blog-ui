@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import request from '@/api/request'
 import { setToken } from '@/stores/auth'
 import { resolveLoginRedirect } from '@/router'
+import { rsaEncryptWithPublicKey } from '@/utils/rsa'
 import { ElCard, ElForm, ElFormItem, ElInput, ElButton, ElMessage } from 'element-plus'
 
 const router = useRouter()
@@ -21,12 +22,28 @@ async function onSubmit() {
   }
   loading.value = true
   try {
+    // 密码传输加密启用时用公钥加密（未启用原样发送）
+    let password = form.password
+    try {
+      const pub = (await request({ url: '/auth/public-settings', method: 'get' })) as {
+        passwordTransport?: { enabled?: boolean; publicKey?: string }
+      }
+      if (pub?.passwordTransport?.enabled) {
+        if (!pub.passwordTransport.publicKey) {
+          ElMessage.error('服务器密码加密配置不完整，请联系管理员')
+          return
+        }
+        password = rsaEncryptWithPublicKey(form.password, pub.passwordTransport.publicKey)
+      }
+    } catch {
+      // 公开配置拉取失败按明文发送（后端未启用加密时行为一致）
+    }
     const res = (await request({
       url: '/auth/login',
       method: 'post',
       data: {
         username: form.username,
-        password: form.password,
+        password,
         loginType: 'ACCESS_PASSWORD',
         scope: 'DEFAULT',
         clientId: 'blog'
