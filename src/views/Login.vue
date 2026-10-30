@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import request from '@/api/request'
 import { setToken } from '@/stores/auth'
@@ -14,6 +14,67 @@ const loading = ref(false)
 
 /** 是否带了回跳目标（用于副标题文案） */
 const hasRedirect = !!route.query.redirect
+
+interface OauthProvider {
+  type: string
+  name?: string
+  icon?: string
+}
+
+const oauthProviders = ref<OauthProvider[]>([])
+const oauthLoading = ref('')
+
+onMounted(async () => {
+  try {
+    const pub = (await request({ url: '/auth/public-settings', method: 'get' })) as {
+      oauthProviders?: OauthProvider[]
+    }
+    oauthProviders.value = pub?.oauthProviders || []
+  } catch {
+    // 公开配置拉取失败则不展示第三方登录
+  }
+})
+
+async function onOauthLogin(p: OauthProvider) {
+  if (oauthLoading.value) return
+  oauthLoading.value = p.type
+  try {
+    sessionStorage.setItem('oauth_intent', 'login')
+    sessionStorage.setItem('oauth_provider', p.type)
+    if (route.query.redirect) {
+      sessionStorage.setItem('oauth_redirect', String(route.query.redirect))
+    } else {
+      sessionStorage.removeItem('oauth_redirect')
+    }
+    const returnTo = `${window.location.origin}/login/oauth-callback`
+    const res = (await request({
+      url: '/auth/oauth/authorize-url',
+      method: 'get',
+      params: {
+        providerType: p.type,
+        clientId: 'blog',
+        returnTo
+      }
+    })) as { url?: string; state?: string }
+    if (!res?.url || !res?.state) {
+      ElMessage.error('未获取到第三方授权地址')
+      sessionStorage.removeItem('oauth_intent')
+      sessionStorage.removeItem('oauth_provider')
+      sessionStorage.removeItem('oauth_redirect')
+      return
+    }
+    sessionStorage.setItem('oauth_state', res.state)
+    window.location.href = res.url
+  } catch (e) {
+    sessionStorage.removeItem('oauth_intent')
+    sessionStorage.removeItem('oauth_provider')
+    sessionStorage.removeItem('oauth_redirect')
+    sessionStorage.removeItem('oauth_state')
+    ElMessage.error(e instanceof Error ? e.message : '第三方登录发起失败')
+  } finally {
+    oauthLoading.value = ''
+  }
+}
 
 async function onSubmit() {
   if (!form.username || !form.password) {
@@ -104,6 +165,29 @@ async function onSubmit() {
           {{ loading ? '登录中…' : '登录' }}
         </el-button>
       </el-form>
+
+      <div v-if="oauthProviders.length" class="oauth-section">
+        <div class="oauth-divider">
+          <span>第三方登录</span>
+        </div>
+        <div class="oauth-btns">
+          <el-button
+            v-for="p in oauthProviders"
+            :key="p.type"
+            class="oauth-btn"
+            :loading="oauthLoading === p.type"
+            @click="onOauthLogin(p)"
+          >
+            <img v-if="p.icon" :src="p.icon" alt="" class="oauth-icon" />
+            <span>{{ p.name || p.type }}</span>
+          </el-button>
+        </div>
+      </div>
+
+      <div class="to-register">
+        <span class="muted">还没有账号？</span>
+        <router-link to="/register">去注册</router-link>
+      </div>
     </el-card>
   </div>
 </template>
@@ -133,5 +217,60 @@ async function onSubmit() {
 .login-btn {
   width: 100%;
   margin-top: 4px;
+}
+
+.oauth-section {
+  margin-top: 20px;
+}
+
+.oauth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.oauth-divider::before,
+.oauth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.oauth-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.oauth-btn {
+  width: 100%;
+}
+
+.oauth-icon {
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  vertical-align: -2px;
+  object-fit: contain;
+}
+
+.to-register {
+  margin-top: 16px;
+  text-align: center;
+  font-size: 13px;
+}
+.to-register .muted {
+  color: var(--muted);
+}
+.to-register a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.to-register a:hover {
+  text-decoration: underline;
 }
 </style>

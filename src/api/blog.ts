@@ -201,6 +201,8 @@ export interface AuthorApply {
   handleTime?: string | null
   handleRemark?: string | null
   createTime?: string | null
+  /** 当前是否真实持有博客主/管理员身份（已通过但角色被取消时为 false） */
+  bloggerActive?: boolean
 }
 
 /** 自助申请成为博客主（登录即可，`blog:author:apply`） */
@@ -434,6 +436,14 @@ export function updateMyProfile(data: {
   avatar?: string
 }): Promise<boolean> {
   return request({ url: '/admin/user/profile', method: 'put', data })
+}
+
+/** 修改本人密码（passwordTransport 启用时字段为 RSA 密文） */
+export function changeMyPassword(data: {
+  oldPassword: string
+  newPassword: string
+}): Promise<boolean> {
+  return request({ url: '/admin/user/profile/password', method: 'put', data })
 }
 
 /** 登录用户上传头像等（平台文件服务） */

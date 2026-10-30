@@ -2,6 +2,8 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { goLogin } from '@/router'
+import request from '@/api/request'
+import { rsaEncryptWithPublicKey } from '@/utils/rsa'
 import { getToken, getUsername, setAvatar } from '@/stores/auth'
 import { formatDate } from '@/utils/date'
 import {
@@ -14,6 +16,7 @@ import {
   getMyProfile,
   updateMyProfile,
   uploadMyFile,
+  changeMyPassword,
   applyAuthor,
   getMyAuthorApply,
   getMyBloggerStatus,
@@ -166,16 +169,22 @@ async function loadBloggerStatus() {
 }
 
 const bloggerStatusTag = computed(() => {
-  const s = bloggerApply.value?.applyStatus
+  const a = bloggerApply.value
+  const s = a?.applyStatus
   if (s === 0) return { label: '审核中', type: 'warning' as const }
+  // 申请已通过但角色已被取消：不再展示「已通过」身份
+  if (s === 1 && a?.bloggerActive === false) return { label: '已取消', type: 'info' as const }
   if (s === 1) return { label: '已通过', type: 'success' as const }
   if (s === 2) return { label: '已拒绝', type: 'danger' as const }
   return { label: '未申请', type: 'info' as const }
 })
 
-/** 未申请 或 被拒后都可再次提交 */
+/** 未申请 / 被拒 / 博客主身份被取消 后都可再次提交 */
 const canApplyBlogger = computed(
-  () => !bloggerApply.value || bloggerApply.value.applyStatus === 2
+  () =>
+    !bloggerApply.value ||
+    bloggerApply.value.applyStatus === 2 ||
+    (bloggerApply.value.applyStatus === 1 && bloggerApply.value.bloggerActive === false)
 )
 
 async function loadBloggerApply() {
@@ -408,6 +417,123 @@ const accountSaving = ref(false)
 const avatarUploading = ref(false)
 const avatarFileInput = ref<HTMLInputElement | null>(null)
 
+// ===== 第三方账号绑定 =====
+interface OauthProvider {
+  type: string
+  name?: string
+  icon?: string
+}
+
+interface OauthBinding {
+  providerType: string
+  providerUsername?: string
+  avatarUrl?: string
+}
+
+const oauthProviders = ref<OauthProvider[]>([])
+const oauthBindings = ref<OauthBinding[]>([])
+const oauthLoading = ref(false)
+const unbindingType = ref('')
+
+const boundTypes = computed(() => new Set(oauthBindings.value.map(b => b.providerType)))
+
+const unboundProviders = computed(() =>
+  oauthProviders.value.filter(p => !boundTypes.value.has(p.type))
+)
+
+function providerLabel(type: string) {
+  return oauthProviders.value.find(p => p.type === type)?.name || type
+}
+
+function providerIcon(type: string) {
+  return oauthProviders.value.find(p => p.type === type)?.icon || ''
+}
+
+async function loadOauthData() {
+  if (!getToken()) return
+  oauthLoading.value = true
+  try {
+    const [pub, bindings] = await Promise.all([
+      request({ url: '/auth/public-settings', method: 'get' }),
+      request({ url: '/auth/oauth/bindings', method: 'get' })
+    ])
+    oauthProviders.value = (pub as { oauthProviders?: OauthProvider[] })?.oauthProviders || []
+    oauthBindings.value = (bindings as OauthBinding[] | null) || []
+  } catch (e) {
+    console.warn('[blog] 第三方账号信息获取失败', e)
+  } finally {
+    oauthLoading.value = false
+  }
+}
+
+async function unbindOauth(b: OauthBinding) {
+  try {
+    await ElMessageBox.confirm(
+      `确定解绑 ${providerLabel(b.providerType)}？解绑后将无法用该账号快捷登录。`,
+      '解绑第三方账号',
+      { confirmButtonText: '确定解绑', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  unbindingType.value = b.providerType
+  try {
+    await request({
+      url: `/auth/oauth/unbind?providerType=${encodeURIComponent(b.providerType)}`,
+      method: 'post'
+    })
+    ElMessage.success('已解绑')
+    await loadOauthData()
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '解绑失败')
+  } finally {
+    unbindingType.value = ''
+  }
+}
+
+async function bindOauth(p: OauthProvider) {
+  if (!getToken()) {
+    goLogin()
+    return
+  }
+  try {
+    sessionStorage.setItem('oauth_intent', 'bind')
+    sessionStorage.setItem('oauth_provider', p.type)
+    sessionStorage.setItem('oauth_redirect', '/profile')
+    const returnTo = `${window.location.origin}/login/oauth-callback`
+    const res = (await request({
+      url: '/auth/oauth/bind-url',
+      method: 'get',
+      params: {
+        providerType: p.type,
+        clientId: 'blog',
+        returnTo
+      }
+    })) as { url?: string; state?: string }
+    if (!res?.url || !res?.state) {
+      ElMessage.error('未获取到第三方授权地址')
+      sessionStorage.removeItem('oauth_intent')
+      sessionStorage.removeItem('oauth_provider')
+      sessionStorage.removeItem('oauth_redirect')
+      return
+    }
+    sessionStorage.setItem('oauth_state', res.state)
+    window.location.href = res.url
+  } catch (e) {
+    sessionStorage.removeItem('oauth_intent')
+    sessionStorage.removeItem('oauth_provider')
+    sessionStorage.removeItem('oauth_redirect')
+    sessionStorage.removeItem('oauth_state')
+    const msg = e instanceof Error ? e.message : '绑定发起失败'
+    if (!getToken()) {
+      ElMessage.warning('请先登录')
+      goLogin()
+      return
+    }
+    ElMessage.error(msg)
+  }
+}
+
 async function loadAccount() {
   try {
     const p = await getMyProfile()
@@ -466,6 +592,54 @@ async function saveAccount() {
   }
 }
 
+// ===== 修改密码 =====
+const pwdForm = ref({ oldPassword: '', newPassword: '', confirm: '' })
+const pwdSaving = ref(false)
+
+async function changePassword() {
+  const { oldPassword, newPassword, confirm } = pwdForm.value
+  if (!oldPassword || !newPassword) {
+    ElMessage.warning('请输入原密码和新密码')
+    return
+  }
+  if (newPassword.length < 6 || newPassword.length > 32) {
+    ElMessage.warning('新密码长度须在 6-32 位')
+    return
+  }
+  if (newPassword !== confirm) {
+    ElMessage.warning('两次输入的新密码不一致')
+    return
+  }
+  pwdSaving.value = true
+  try {
+    // 密码传输加密启用时用公钥加密（未启用原样发送）
+    let oldPwd = oldPassword
+    let newPwd = newPassword
+    try {
+      const pub = (await request({ url: '/auth/public-settings', method: 'get' })) as {
+        passwordTransport?: { enabled?: boolean; publicKey?: string }
+      }
+      if (pub?.passwordTransport?.enabled) {
+        if (!pub.passwordTransport.publicKey) {
+          ElMessage.error('服务器密码加密配置不完整，请联系管理员')
+          return
+        }
+        oldPwd = rsaEncryptWithPublicKey(oldPassword, pub.passwordTransport.publicKey)
+        newPwd = rsaEncryptWithPublicKey(newPassword, pub.passwordTransport.publicKey)
+      }
+    } catch {
+      // 公开配置拉取失败按明文发送（后端未启用加密时行为一致）
+    }
+    await changeMyPassword({ oldPassword: oldPwd, newPassword: newPwd })
+    pwdForm.value = { oldPassword: '', newPassword: '', confirm: '' }
+    ElMessage.success('密码修改成功，下次登录请使用新密码')
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '密码修改失败')
+  } finally {
+    pwdSaving.value = false
+  }
+}
+
 onMounted(() => {
   if (!getToken()) {
     // 用 replace 并记住来源：避免回退键在 /profile ↔ /login 之间来回弹
@@ -481,6 +655,7 @@ onMounted(() => {
   void loadOverview()
   void loadBloggerApply()
   void loadBloggerStatus()
+  void loadOauthData()
   if (activeTab.value === 'articles') void loadArticles()
   if (activeTab.value === 'collections') void loadCollections()
 })
@@ -560,6 +735,12 @@ watch(articleQuery, () => {
             <p v-if="bloggerApply?.applyStatus === 2" class="apply-remark">
               上次被拒：{{ bloggerApply.handleRemark || '管理员未填写理由' }}
             </p>
+            <p
+              v-else-if="bloggerApply?.applyStatus === 1 && bloggerApply?.bloggerActive === false"
+              class="apply-remark"
+            >
+              博客主身份已被取消，如需发文可重新申请。
+            </p>
           </template>
 
           <p v-else-if="bloggerApply?.applyStatus === 0" class="apply-note muted">
@@ -569,6 +750,7 @@ watch(articleQuery, () => {
           <p v-else-if="statusError" class="apply-note muted">
             暂停状态暂未获取到（见控制台 [blog] 日志），先按正常展示；若你已被封禁请联系管理员核实。
           </p>
+          <!-- 走到这里必然是「已通过且身份有效」 -->
           <p v-else class="apply-note apply-ok">已通过，你现在可以发布自己的文章了。</p>
         </section>
 
@@ -844,7 +1026,11 @@ watch(articleQuery, () => {
             <div class="aside-meta">
               <strong>{{ displayName || username || '未登录' }}</strong>
               <span class="muted small">@{{ username }}</span>
-              <span class="role-pill">博客主</span>
+              <!-- 仅真实持有博客主身份时展示，避免取消后/游客误显示 -->
+              <span
+                v-if="bloggerApply?.applyStatus === 1 && bloggerApply?.bloggerActive !== false"
+                class="role-pill"
+              >博客主</span>
             </div>
             <p class="aside-hint muted small">支持 JPG / PNG，建议正方形，≤2MB</p>
           </aside>
@@ -896,6 +1082,94 @@ watch(articleQuery, () => {
             <div class="account-foot muted small">
               昵称为展示名；账号仅登录使用。保存后顶栏与文章页昵称立即生效。
             </div>
+
+            <section class="account-section">
+              <header class="section-head">
+                <h3>修改密码</h3>
+                <span class="muted small">6-32 位；修改后下次登录请使用新密码</span>
+              </header>
+              <el-form label-position="top" class="account-form" @submit.prevent>
+                <div class="field-grid">
+                  <el-form-item label="原密码" required>
+                    <el-input
+                      v-model="pwdForm.oldPassword"
+                      type="password"
+                      show-password
+                      autocomplete="current-password"
+                      placeholder="当前登录密码"
+                    />
+                  </el-form-item>
+                  <el-form-item label="新密码" required>
+                    <el-input
+                      v-model="pwdForm.newPassword"
+                      type="password"
+                      show-password
+                      autocomplete="new-password"
+                      placeholder="6-32 位"
+                    />
+                  </el-form-item>
+                  <el-form-item label="确认新密码" required>
+                    <el-input
+                      v-model="pwdForm.confirm"
+                      type="password"
+                      show-password
+                      autocomplete="new-password"
+                      placeholder="再次输入新密码"
+                      @keyup.enter="changePassword"
+                    />
+                  </el-form-item>
+                </div>
+                <el-button type="primary" :loading="pwdSaving" @click="changePassword">确认修改</el-button>
+              </el-form>
+            </section>
+
+            <section class="account-section">
+              <header class="section-head">
+                <h3>第三方账号</h3>
+                <span class="muted small">绑定后可用第三方账号快捷登录</span>
+              </header>
+              <p v-if="!getToken()" class="oauth-empty muted">登录后可绑定</p>
+              <template v-else>
+                <div v-loading="oauthLoading" class="oauth-bind-list">
+                  <div v-for="b in oauthBindings" :key="b.providerType" class="oauth-bind-row">
+                    <div class="oauth-bind-main">
+                      <img
+                        v-if="providerIcon(b.providerType) || b.avatarUrl"
+                        :src="providerIcon(b.providerType) || b.avatarUrl"
+                        alt=""
+                        class="oauth-bind-icon"
+                      />
+                      <div class="oauth-bind-meta">
+                        <strong>{{ providerLabel(b.providerType) }}</strong>
+                        <span class="muted small">{{ b.providerUsername || '已绑定' }}</span>
+                      </div>
+                    </div>
+                    <el-button
+                      link
+                      type="danger"
+                      size="small"
+                      :loading="unbindingType === b.providerType"
+                      @click="unbindOauth(b)"
+                    >
+                      解绑
+                    </el-button>
+                  </div>
+                  <div v-for="p in unboundProviders" :key="p.type" class="oauth-bind-row">
+                    <div class="oauth-bind-main">
+                      <img v-if="p.icon" :src="p.icon" alt="" class="oauth-bind-icon" />
+                      <div class="oauth-bind-meta">
+                        <strong>{{ p.name || p.type }}</strong>
+                        <span class="muted small">未绑定</span>
+                      </div>
+                    </div>
+                    <el-button link type="primary" size="small" @click="bindOauth(p)">绑定</el-button>
+                  </div>
+                  <p v-if="!oauthBindings.length && !unboundProviders.length" class="oauth-empty muted">
+                    暂未开放第三方登录
+                  </p>
+                </div>
+              </template>
+            </section>
           </div>
         </div>
       </template>
@@ -1319,6 +1593,61 @@ watch(articleQuery, () => {
 
 .account-foot {
   padding: 0 4px;
+}
+
+.oauth-bind-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 10px;
+}
+
+.oauth-bind-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.oauth-bind-row:last-child {
+  border-bottom: none;
+}
+
+.oauth-bind-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.oauth-bind-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  object-fit: contain;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.oauth-bind-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.oauth-bind-meta strong {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.oauth-empty {
+  margin: 0;
+  padding-bottom: 10px;
+  font-size: 13px;
 }
 
 .recent-list {

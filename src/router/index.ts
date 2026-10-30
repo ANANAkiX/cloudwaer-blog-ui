@@ -60,6 +60,18 @@ const routes: RouteRecordRaw[] = [
         name: 'login',
         component: () => import('@/views/Login.vue'),
         meta: { title: '登录' }
+      },
+      {
+        path: 'register',
+        name: 'register',
+        component: () => import('@/views/Register.vue'),
+        meta: { title: '注册' }
+      },
+      {
+        path: 'login/oauth-callback',
+        name: 'oauth-callback',
+        component: () => import('@/views/OauthCallback.vue'),
+        meta: { title: '第三方登录' }
       }
     ]
   },
